@@ -1,0 +1,23 @@
+# Built outputs
+*.iml
+.gradle/
+/build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# Signing — never commit real secrets
+keystore.properties
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
