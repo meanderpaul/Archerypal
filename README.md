@@ -4,7 +4,7 @@ Pure Kotlin Android app for offline, peer-to-peer archery score tracking on the 
 
 ## Features
 
-- **Host / Join** — Nearby Connections P2P; join via QR scan or discovered hosts
+- **Host / Join** — Hybrid sync: libp2p circuit relay over cell/Wi‑Fi when online, Nearby Connections fallback offline
 - **Shoot setup** — Host sets target count before scoring
 - **Turn-based logging** — Large outdoor-readable number pad (0–10)
 - **Host sync** — Host is source of truth; peers queue scores when disconnected
@@ -13,7 +13,8 @@ Pure Kotlin Android app for offline, peer-to-peer archery score tracking on the 
 ## Tech stack
 
 - Kotlin + Jetpack Compose (Material 3)
-- Google Play Services Nearby Connections
+- Google Play Services Nearby Connections (local fallback)
+- [jvm-libp2p](https://github.com/libp2p/jvm-libp2p) (device-hosted WAN — no backend server)
 - CameraX + ML Kit barcode scanning
 - ZXing QR generation
 - `minSdk 26`, `targetSdk 35` (Google Play requirement)
@@ -50,18 +51,45 @@ Output: `app/build/outputs/bundle/release/app-release.aab`
 | Release signing | `keystore.properties` + `signingConfigs.release` |
 | R8 minify + shrink | Enabled for `release` |
 | Backup disabled | `allowBackup=false`, data extraction rules |
-| Permission declarations | Camera, Bluetooth, location (Nearby API) |
+| Permission declarations | Camera, Bluetooth, location (Nearby API), foreground service (match sync) |
 | Privacy policy URL | [PRIVACY_POLICY.md](PRIVACY_POLICY.md) |
+| Data safety guide | [docs/DATA_SAFETY.md](docs/DATA_SAFETY.md) |
 
 ### Play Console — Data safety
 
-This app:
+Archerypal does **not** operate a backend that collects match scores or player names. Match data stays on devices and syncs peer-to-peer (libp2p or Nearby Connections).
 
-- Does **not** collect personal data on a server (fully offline P2P)
-- Uses camera only for QR scanning
-- Uses Bluetooth/Wi‑Fi/location APIs required by [Nearby Connections](https://developers.google.com/nearby/connections/android/get-started)
+The **free version** shows **Google AdMob** banner ads on the home screen. AdMob may collect and share device/advertising data for ad delivery — declare those types in Play Console per [docs/DATA_SAFETY.md](docs/DATA_SAFETY.md) and [Google's AdMob disclosure guide](https://support.google.com/admob/answer/10113207).
 
-Declare: **No data collected** (or “data not shared with third parties”) if you do not add analytics.
+A one-time **Remove ads** in-app purchase (Google Play Billing) stops home-screen ads. Payment is processed by Google; Archerypal only stores a local ad-free entitlement.
+
+**Quick answers for the form:**
+
+- **Contains ads?** Yes (banner, home screen; removable via IAP)
+- **Collect data to your own server?** No
+- **Third-party data collection (AdMob)?** Yes — see [docs/DATA_SAFETY.md](docs/DATA_SAFETY.md) for per-type declarations
+- **Privacy policy URL:** `https://github.com/meanderpaul/Archerypal/blob/main/PRIVACY_POLICY.md`
+
+### libp2p WAN via public circuit relay (no backend you build)
+
+When archers have mobile data or Wi‑Fi, the host runs a **libp2p node on the device**. The host reserves a slot on **public libp2p relay nodes** (community infrastructure such as libp2p/IPFS bootstrap nodes — not servers we operate). Joiners scan the host QR code, which encodes:
+
+- `libp2pPeerId` — host identity
+- `libp2pCircuitMultiaddrs` — **primary** dial path through a public relay (`/p2p-circuit/…`)
+- `libp2pMultiaddrs` — direct addresses (secondary, when routable)
+
+| Tier | When | Path |
+|------|------|------|
+| 1 | Internet + circuit addrs in QR | libp2p via public relay |
+| 2 | Internet + direct routable addr | libp2p direct TCP |
+| 3 | No internet / relay fail | Nearby Connections (~tens of meters) |
+
+- **Online:** libp2p over circuit relay + Noise encryption (host-centric star topology)
+- **Offline / no route:** falls back to **Nearby Connections** on the field
+- **QR required for remote join:** the QR carries peer ID and dial addresses
+- **Foreground service:** keeps relay reservation and libp2p connections alive during active matches
+
+**Honest limits:** Mile-long cellular sync is **best-effort**. Carrier NAT, relay availability, battery, and OS background limits affect reliability. Public relays may be slow or rate-limited; the app tries multiple fallbacks. Hole punching is not available in jvm-libp2p today.
 
 ### Store listing assets still needed
 
@@ -74,10 +102,17 @@ Declare: **No data collected** (or “data not shared with third parties”) if 
 ## Project structure
 
 ```
-app/src/main/java/com/archerypal/
+app/src/main/java/com/archerypal/app/
 ├── MainActivity.kt          # Navigation + permissions
 ├── data/Models.kt           # Match state, P2P messages, QR payload
-├── p2p/NearbyConnectionsManager.kt
+├── p2p/
+│   ├── NearbyConnectionsManager.kt   # Local Bluetooth / Wi‑Fi
+│   ├── libp2p/MatchProtocol.kt       # App protocol on libp2p streams
+│   ├── libp2p/Libp2pMatchNode.kt     # libp2p host, relay reserve, dial
+│   ├── libp2p/Libp2pRelayConfig.kt   # public relay multiaddrs
+│   ├── Libp2pWanTransport.kt         # WAN transport adapter
+│   ├── MatchSyncForegroundService.kt # keep relay + libp2p alive
+│   └── HybridMatchTransport.kt       # relay WAN when online, nearby fallback
 ├── viewmodel/MatchViewModel.kt
 └── ui/
     ├── components/          # Score pad, QR, scanner
