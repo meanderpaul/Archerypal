@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Archerypal</string>
+    <string name="match_sync_channel_name">Match sync</string>
+    <string name="match_sync_channel_description">Keeps libp2p match connections active while you walk the course</string>
+    <string name="match_sync_notification_title">Archerypal match active</string>
+    <string name="match_sync_notification_body">Syncing scores over libp2p and nearby</string>
 </resources>

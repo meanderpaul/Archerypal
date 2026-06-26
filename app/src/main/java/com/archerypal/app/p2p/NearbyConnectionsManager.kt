@@ -1,10 +1,11 @@
-package com.archerypal.p2p
+package com.archerypal.app.p2p
 
 import android.content.Context
-import com.archerypal.data.AppConstants
-import com.archerypal.data.AppJson
-import com.archerypal.data.DiscoveredHost
-import com.archerypal.data.P2PMessage
+import com.archerypal.app.data.AppConstants
+import com.archerypal.app.data.AppJson
+import com.archerypal.app.data.DiscoveredHost
+import com.archerypal.app.data.P2PMessage
+import com.archerypal.app.p2p.libp2p.RelayReservationStatus
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.AdvertisingOptions
 import com.google.android.gms.nearby.connection.ConnectionInfo
@@ -36,6 +37,7 @@ sealed class P2PEvent {
     data class MessageReceived(val endpointId: String, val message: P2PMessage) : P2PEvent()
     data class HostDiscovered(val host: DiscoveredHost) : P2PEvent()
     data class Error(val message: String) : P2PEvent()
+    data class RelayStatusChanged(val status: RelayReservationStatus) : P2PEvent()
     data object AdvertisingStarted : P2PEvent()
     data object DiscoveryStarted : P2PEvent()
 }

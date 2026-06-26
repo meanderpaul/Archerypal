@@ -1,4 +1,4 @@
-package com.archerypal
+package com.archerypal.app
 
 import android.Manifest
 import android.os.Build
@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -22,15 +23,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.archerypal.data.MatchPhase
-import com.archerypal.ui.components.QrScannerView
-import com.archerypal.ui.screens.HomeScreen
-import com.archerypal.ui.screens.HostScreen
-import com.archerypal.ui.screens.JoinScreen
-import com.archerypal.ui.screens.MatchScreen
-import com.archerypal.ui.screens.SetupScreen
-import com.archerypal.ui.theme.ArcherypalTheme
-import com.archerypal.viewmodel.MatchViewModel
+import com.archerypal.app.data.MatchPhase
+import com.archerypal.app.ui.components.QrScannerView
+import com.archerypal.app.ui.screens.HomeScreen
+import com.archerypal.app.ui.screens.HostScreen
+import com.archerypal.app.ui.screens.JoinScreen
+import com.archerypal.app.ui.screens.MatchScreen
+import com.archerypal.app.ui.screens.SetupScreen
+import com.archerypal.app.ui.theme.ArcherypalTheme
+import com.archerypal.app.viewmodel.MatchViewModel
+import com.google.android.gms.ads.MobileAds
 
 class MainActivity : ComponentActivity() {
 
@@ -40,6 +42,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MobileAds.initialize(this)
         enableEdgeToEdge()
         requestNearbyPermissions()
 
@@ -106,6 +109,17 @@ private fun ArcherypalApp(viewModel: MatchViewModel = viewModel()) {
         }
     }
 
+    if (state.billingMessage != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::clearBillingMessage,
+            title = { Text("Purchase") },
+            text = { Text(state.billingMessage.orEmpty()) },
+            confirmButton = {
+                TextButton(onClick = viewModel::clearBillingMessage) { Text("OK") }
+            }
+        )
+    }
+
     if (state.errorMessage != null) {
         AlertDialog(
             onDismissRequest = viewModel::clearError,
@@ -124,6 +138,7 @@ private fun ArcherypalApp(viewModel: MatchViewModel = viewModel()) {
             modifier = Modifier.padding(padding)
         ) {
             composable("home") {
+                val activity = LocalContext.current as ComponentActivity
                 HomeScreen(
                     playerName = state.playerName,
                     onNameChange = viewModel::setPlayerName,
@@ -145,7 +160,10 @@ private fun ArcherypalApp(viewModel: MatchViewModel = viewModel()) {
                     },
                     savedFriends = state.savedFriends,
                     lastMatchGroup = state.lastMatchGroup,
-                    globalLeaderboard = state.globalLeaderboard
+                    globalLeaderboard = state.globalLeaderboard,
+                    isAdFree = state.isAdFree,
+                    removeAdsPrice = state.removeAdsPrice,
+                    onRemoveAds = { viewModel.launchRemoveAdsPurchase(activity) }
                 )
             }
             composable("host") {
@@ -153,6 +171,7 @@ private fun ArcherypalApp(viewModel: MatchViewModel = viewModel()) {
                     qrContent = viewModel.buildQrContent(),
                     playerCount = state.players.size,
                     statusMessage = state.statusMessage,
+                    transportLabel = state.transportLabel,
                     onContinue = { navController.navigate("setup") },
                     onLeave = {
                         viewModel.leaveMatch()
@@ -163,6 +182,7 @@ private fun ArcherypalApp(viewModel: MatchViewModel = viewModel()) {
             composable("join") {
                 JoinScreen(
                     statusMessage = state.statusMessage,
+                    transportLabel = state.transportLabel,
                     discoveredHosts = state.discoveredHosts,
                     onHostSelected = viewModel::connectToDiscoveredHost,
                     onLeave = {
@@ -176,6 +196,8 @@ private fun ArcherypalApp(viewModel: MatchViewModel = viewModel()) {
             }
             composable("setup") {
                 SetupScreen(
+                    scoringType = state.scoringType,
+                    onScoringTypeChange = viewModel::setScoringType,
                     targetCountInput = state.targetCountInput,
                     onTargetCountInputChange = viewModel::setTargetCountInput,
                     playerCount = state.players.size,
@@ -191,14 +213,18 @@ private fun ArcherypalApp(viewModel: MatchViewModel = viewModel()) {
             }
             composable("match") {
                 MatchScreen(
+                    scoringType = state.scoringType,
                     targetCount = state.targetCount,
                     selectedTarget = state.selectedTarget,
                     pendingScore = state.pendingScore,
+                    playerTargetScores = viewModel.playerTargetScores(),
+                    playerRunningTotal = viewModel.playerRunningTotal(),
                     statusMessage = state.statusMessage,
                     phase = state.phase,
                     isHost = state.isHost,
                     matchLeaderboard = viewModel.matchLeaderboard(),
                     onTargetSelected = viewModel::selectTarget,
+                    onPresetScore = viewModel::selectPresetScore,
                     onDigit = viewModel::appendDigit,
                     onClear = viewModel::clearPendingScore,
                     onSubmit = viewModel::submitScore,

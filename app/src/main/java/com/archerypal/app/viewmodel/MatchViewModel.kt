@@ -1,30 +1,35 @@
-package com.archerypal.viewmodel
+package com.archerypal.app.viewmodel
 
+import android.app.Activity
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.archerypal.data.AppConstants
-import com.archerypal.data.AppJson
-import com.archerypal.data.DiscoveredHost
-import com.archerypal.data.LeaderboardRow
-import com.archerypal.data.MatchPhase
-import com.archerypal.data.MatchState
-import com.archerypal.data.MessageType
-import com.archerypal.data.PersistedAppData
-import com.archerypal.data.PlayerInfo
-import com.archerypal.data.QrPayload
-import com.archerypal.data.SavedFriend
-import com.archerypal.data.SavedMatchRecord
-import com.archerypal.data.ScoreEntry
-import com.archerypal.data.PersistenceRepository
-import com.archerypal.data.generateMatchId
-import com.archerypal.data.globalLeaderboardRows
-import com.archerypal.data.matchLeaderboardRows
-import com.archerypal.data.rankGlobalStats
-import com.archerypal.data.rankMatchTotals
-import com.archerypal.data.scoreKey
-import com.archerypal.p2p.NearbyConnectionsManager
-import com.archerypal.p2p.P2PEvent
+import com.archerypal.app.billing.BillingManager
+import com.archerypal.app.data.AppConstants
+import com.archerypal.app.data.AppJson
+import com.archerypal.app.data.DiscoveredHost
+import com.archerypal.app.data.LeaderboardRow
+import com.archerypal.app.data.MatchPhase
+import com.archerypal.app.data.MatchState
+import com.archerypal.app.data.MessageType
+import com.archerypal.app.data.PersistedAppData
+import com.archerypal.app.data.PlayerInfo
+import com.archerypal.app.data.QrPayload
+import com.archerypal.app.data.SavedFriend
+import com.archerypal.app.data.SavedMatchRecord
+import com.archerypal.app.data.ScoreEntry
+import com.archerypal.app.data.ScoringType
+import com.archerypal.app.data.PersistenceRepository
+import com.archerypal.app.data.generateMatchId
+import com.archerypal.app.data.globalLeaderboardRows
+import com.archerypal.app.data.matchLeaderboardRows
+import com.archerypal.app.data.parseScoringType
+import com.archerypal.app.data.rankGlobalStats
+import com.archerypal.app.data.rankMatchTotals
+import com.archerypal.app.data.scoreKey
+import com.archerypal.app.p2p.HybridMatchTransport
+import com.archerypal.app.p2p.P2PEvent
+import com.archerypal.app.p2p.LIBP2P_HOST_ENDPOINT_ID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,6 +48,7 @@ data class UiState(
     val phase: MatchPhase = MatchPhase.LOBBY,
     val targetCount: Int = 0,
     val targetCountInput: String = "",
+    val scoringType: ScoringType = ScoringType.ASA,
     val players: List<PlayerInfo> = emptyList(),
     val scores: List<ScoreEntry> = emptyList(),
     val selectedTarget: Int = 1,
@@ -57,13 +63,22 @@ data class UiState(
     val lastMatchGroup: List<String> = emptyList(),
     val globalLeaderboard: List<LeaderboardRow> = emptyList(),
     val resyncHostName: String? = null,
-    val isRematch: Boolean = false
+    val isRematch: Boolean = false,
+    val transportLabel: String = "",
+    val isAdFree: Boolean = false,
+    val removeAdsPrice: String? = null,
+    val billingMessage: String? = null
 )
 
 class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val p2p = NearbyConnectionsManager(application)
+    private val transport = HybridMatchTransport(application)
     private val persistence = PersistenceRepository(application)
+    private val billingManager = BillingManager(
+        context = application,
+        scope = viewModelScope,
+        onAdFreeGranted = { persistence.setAdFree(true) }
+    )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -72,22 +87,42 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     private var persistedData = PersistedAppData()
 
     init {
+        billingManager.startConnection()
+
+        viewModelScope.launch {
+            billingManager.isAdFree.collect { isAdFree ->
+                _uiState.update { it.copy(isAdFree = isAdFree) }
+            }
+        }
+        viewModelScope.launch {
+            billingManager.removeAdsPrice.collect { price ->
+                _uiState.update { it.copy(removeAdsPrice = price) }
+            }
+        }
+        viewModelScope.launch {
+            billingManager.billingMessage.collect { message ->
+                _uiState.update { it.copy(billingMessage = message) }
+            }
+        }
+
         viewModelScope.launch {
             persistence.dataFlow.collect { data ->
                 persistedData = data
+                billingManager.setCachedAdFree(data.isAdFree)
                 _uiState.update { state ->
                     state.copy(
                         playerName = state.playerName.ifBlank { data.playerName },
                         savedFriends = data.friends,
                         lastMatchGroup = data.lastMatchGroup,
-                        globalLeaderboard = globalLeaderboardRows(rankGlobalStats(data.globalStats.values))
+                        globalLeaderboard = globalLeaderboardRows(rankGlobalStats(data.globalStats.values)),
+                        isAdFree = data.isAdFree || state.isAdFree
                     )
                 }
             }
         }
 
         viewModelScope.launch {
-            p2p.events.collect { event ->
+            transport.events.collect { event ->
                 when (event) {
                     is P2PEvent.EndpointConnected -> handleEndpointConnected(event.endpointId, event.name)
                     is P2PEvent.EndpointDisconnected -> handleEndpointDisconnected(event.endpointId)
@@ -95,18 +130,40 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                     is P2PEvent.HostDiscovered -> addDiscoveredHost(event.host)
                     is P2PEvent.Error -> _uiState.update { it.copy(errorMessage = event.message) }
                     P2PEvent.AdvertisingStarted -> _uiState.update {
-                        it.copy(statusMessage = advertisingMessage(it))
+                        it.copy(
+                            statusMessage = advertisingMessage(it),
+                            transportLabel = transport.statusSuffix()
+                        )
+                    }
+                    is P2PEvent.RelayStatusChanged -> _uiState.update {
+                        it.copy(transportLabel = transport.statusSuffix())
                     }
                     P2PEvent.DiscoveryStarted -> _uiState.update {
-                        it.copy(statusMessage = discoveryMessage(it))
+                        it.copy(
+                            statusMessage = discoveryMessage(it),
+                            transportLabel = transport.statusSuffix()
+                        )
                     }
                 }
             }
         }
 
         viewModelScope.launch {
-            p2p.connectedEndpoints.collect { endpoints ->
-                _uiState.update { it.copy(connectedCount = endpoints.size) }
+            transport.connectedEndpoints.collect { endpoints ->
+                _uiState.update {
+                    it.copy(
+                        connectedCount = endpoints.size,
+                        transportLabel = transport.statusSuffix()
+                    )
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            transport.activePaths.collect {
+                _uiState.update { state ->
+                    state.copy(transportLabel = transport.statusSuffix())
+                }
             }
         }
     }
@@ -138,13 +195,14 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 phase = MatchPhase.LOBBY,
                 targetCount = 0,
                 targetCountInput = "",
+                scoringType = ScoringType.ASA,
                 scores = emptyList(),
                 players = listOf(PlayerInfo(name, "local", isHost = true)),
                 errorMessage = null,
                 statusMessage = if (rematch) "Rematch — waiting for your group…" else "Starting host…"
             )
         }
-        p2p.startHosting(name, matchId) {}
+        transport.startHosting(name, matchId) {}
     }
 
     fun startJoining() {
@@ -179,7 +237,29 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 }
             )
         }
-        p2p.startDiscovery()
+        transport.startDiscovery(resyncHostName, name)
+        if (resyncHostName != null) {
+            val friend = persistedData.friends.firstOrNull {
+                it.name.equals(resyncHostName, ignoreCase = true) ||
+                    it.lastHostName?.equals(resyncHostName, ignoreCase = true) == true
+            }
+            if (friend != null &&
+                !friend.lastLibp2pPeerId.isNullOrBlank() &&
+                (friend.lastLibp2pCircuitMultiaddrs.isNotEmpty() || friend.lastLibp2pMultiaddrs.isNotEmpty())
+            ) {
+                transport.connectToHost(
+                    DiscoveredHost(
+                        endpointId = LIBP2P_HOST_ENDPOINT_ID,
+                        hostName = resyncHostName,
+                        matchId = friend.lastMatchId.orEmpty(),
+                        libp2pPeerId = friend.lastLibp2pPeerId,
+                        libp2pCircuitMultiaddrs = friend.lastLibp2pCircuitMultiaddrs,
+                        libp2pMultiaddrs = friend.lastLibp2pMultiaddrs
+                    ),
+                    name
+                )
+            }
+        }
     }
 
     fun connectToDiscoveredHost(host: DiscoveredHost) {
@@ -190,8 +270,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 statusMessage = "Connecting to ${host.hostName}…"
             )
         }
-        rememberFriend(host.hostName, host.hostName, host.matchId)
-        p2p.connectToHost(host.endpointId, _uiState.value.playerName)
+        rememberFriend(
+            host.hostName,
+            host.hostName,
+            host.matchId,
+            host.libp2pPeerId,
+            host.libp2pCircuitMultiaddrs,
+            host.libp2pMultiaddrs
+        )
+        transport.connectToHost(host, _uiState.value.playerName)
     }
 
     fun onQrScanned(raw: String) {
@@ -200,14 +287,24 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             AppJson.decodeFromString(QrPayload.serializer(), json)
         }.onSuccess { payload ->
             val host = DiscoveredHost(
-                endpointId = "",
+                endpointId = LIBP2P_HOST_ENDPOINT_ID,
                 hostName = payload.hostName,
-                matchId = payload.matchId
+                matchId = payload.matchId,
+                libp2pPeerId = payload.libp2pPeerId,
+                libp2pCircuitMultiaddrs = payload.libp2pCircuitMultiaddrs,
+                libp2pMultiaddrs = payload.libp2pMultiaddrs
             )
             _uiState.update {
                 it.copy(matchId = payload.matchId, statusMessage = "Match found: ${payload.hostName}")
             }
-            rememberFriend(payload.hostName, payload.hostName, payload.matchId)
+            rememberFriend(
+                payload.hostName,
+                payload.hostName,
+                payload.matchId,
+                payload.libp2pPeerId,
+                payload.libp2pCircuitMultiaddrs,
+                payload.libp2pMultiaddrs
+            )
             if (_uiState.value.discoveredHosts.none { it.matchId == payload.matchId }) {
                 addDiscoveredHost(host)
             }
@@ -218,8 +315,19 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     fun buildQrContent(): String {
         val state = _uiState.value
-        val payload = QrPayload(state.matchId, state.playerName)
+        val ad = transport.libp2pAdvertisement()
+        val payload = QrPayload(
+            matchId = state.matchId,
+            hostName = state.playerName,
+            libp2pPeerId = ad.peerId,
+            libp2pCircuitMultiaddrs = ad.circuitMultiaddrs,
+            libp2pMultiaddrs = ad.directMultiaddrs
+        )
         return AppConstants.QR_PREFIX + AppJson.encodeToString(QrPayload.serializer(), payload)
+    }
+
+    fun setScoringType(type: ScoringType) {
+        _uiState.update { it.copy(scoringType = type, pendingScore = "") }
     }
 
     fun setTargetCountInput(input: String) {
@@ -250,19 +358,29 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         _uiState.update { it.copy(phase = MatchPhase.SCORING, targetCountInput = count.toString()) }
-        broadcastMatchSetup(count)
+        broadcastMatchSetup(count, _uiState.value.scoringType)
         broadcastMatchState()
     }
 
+    fun selectPresetScore(value: Int) {
+        val scoringType = _uiState.value.scoringType
+        if (!scoringType.isValidScore(value)) return
+        _uiState.update { it.copy(pendingScore = value.toString()) }
+    }
+
     fun selectTarget(index: Int) {
-        _uiState.update { it.copy(selectedTarget = index, pendingScore = "") }
+        val state = _uiState.value
+        val existing = scoreForPlayerTarget(state, state.playerName, index)
+        _uiState.update { it.copy(selectedTarget = index, pendingScore = existing?.toString().orEmpty()) }
     }
 
     fun appendDigit(digit: String) {
-        val current = _uiState.value.pendingScore
-        if (current.length >= 2) return
+        val state = _uiState.value
+        if (state.scoringType != ScoringType.FREEFORM) return
+        val current = state.pendingScore
+        if (current.length >= state.scoringType.scoreInputMaxDigits()) return
         val next = (current + digit).toIntOrNull() ?: return
-        if (next > AppConstants.MAX_SCORE) return
+        if (next > AppConstants.FREEFORM_MAX_SCORE) return
         _uiState.update { it.copy(pendingScore = next.toString()) }
     }
 
@@ -274,7 +392,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         val state = _uiState.value
         if (state.phase == MatchPhase.FINISHED) return
         val value = state.pendingScore.toIntOrNull() ?: return
-        if (value !in AppConstants.MIN_SCORE..AppConstants.MAX_SCORE) return
+        if (!state.scoringType.isValidScore(value)) return
 
         val entry = ScoreEntry(
             matchId = state.matchId,
@@ -282,14 +400,42 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             targetIndex = state.selectedTarget,
             scoreValue = value
         )
+        val loggedTarget = state.selectedTarget
+        val nextTarget = nextTargetAfterSubmit(loggedTarget, state.targetCount)
 
         if (state.isHost) {
-            mergeScore(entry)
+            _uiState.update { current ->
+                current.copy(
+                    scores = replaceScore(current.scores, entry),
+                    pendingScore = "",
+                    selectedTarget = nextTarget,
+                    statusMessage = "Target $loggedTarget: $value logged"
+                )
+            }
             broadcastMatchState()
-            _uiState.update { it.copy(pendingScore = "") }
         } else {
-            submitScoreToHost(entry)
-            _uiState.update { it.copy(pendingScore = "", statusMessage = "Score sent") }
+            _uiState.update { current ->
+                current.copy(
+                    scores = replaceScore(current.scores, entry),
+                    pendingScore = "",
+                    selectedTarget = nextTarget,
+                    pendingQueue = current.pendingQueue + entry,
+                    statusMessage = "Target $loggedTarget: $value sent"
+                )
+            }
+            val hostId = state.hostEndpointId ?: transport.connectedEndpoints.value.firstOrNull()
+            if (hostId != null) {
+                transport.sendMessage(
+                    hostId,
+                    MessageType.SCORE_SUBMIT.name,
+                    buildJsonObject {
+                        put("match_id", entry.matchId)
+                        put("player_name", entry.playerName)
+                        put("target_index", entry.targetIndex)
+                        put("score_value", entry.scoreValue)
+                    }
+                )
+            }
         }
     }
 
@@ -302,8 +448,16 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    fun clearBillingMessage() {
+        billingManager.clearBillingMessage()
+    }
+
+    fun launchRemoveAdsPurchase(activity: Activity) {
+        billingManager.launchRemoveAdsPurchase(activity)
+    }
+
     fun leaveMatch() {
-        p2p.shutdown()
+        transport.shutdown()
         val name = _uiState.value.playerName
         _uiState.value = UiState(
             playerName = name,
@@ -316,6 +470,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     fun matchLeaderboard(): List<LeaderboardRow> =
         matchLeaderboardRows(rankMatchTotals(currentMatchTotals()))
+
+    fun playerTargetScores(): Map<Int, Int> {
+        val name = _uiState.value.playerName
+        return _uiState.value.scores
+            .filter { it.playerName == name }
+            .associate { it.targetIndex to it.scoreValue }
+    }
+
+    fun playerRunningTotal(): Int = playerTargetScores().values.sum()
 
     private fun currentMatchTotals(): Map<String, Int> {
         val totals = mutableMapOf<String, Int>()
@@ -338,9 +501,27 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             ?: "Searching for nearby hosts…"
     }
 
-    private fun rememberFriend(name: String, hostName: String?, matchId: String?) {
+    private fun libp2pPeerId(): String? = transport.libp2pAdvertisement().peerId
+    private fun libp2pCircuitMultiaddrs(): List<String> = transport.libp2pAdvertisement().circuitMultiaddrs
+    private fun libp2pMultiaddrs(): List<String> = transport.libp2pAdvertisement().directMultiaddrs
+
+    private fun rememberFriend(
+        name: String,
+        hostName: String?,
+        matchId: String?,
+        libp2pPeerId: String? = null,
+        libp2pCircuitMultiaddrs: List<String> = emptyList(),
+        libp2pMultiaddrs: List<String> = emptyList()
+    ) {
         viewModelScope.launch {
-            persistence.rememberFriend(name, hostName, matchId)
+            persistence.rememberFriend(
+                name,
+                hostName,
+                matchId,
+                libp2pPeerId,
+                libp2pCircuitMultiaddrs,
+                libp2pMultiaddrs
+            )
         }
     }
 
@@ -354,7 +535,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         _uiState.update { state ->
-            if (state.discoveredHosts.any { it.endpointId == host.endpointId && host.endpointId.isNotBlank() }) {
+            if (state.discoveredHosts.any { it.matchId == host.matchId }) {
                 state
             } else {
                 state.copy(discoveredHosts = state.discoveredHosts + host)
@@ -377,8 +558,8 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             _uiState.update { it.copy(hostEndpointId = endpointId, phase = MatchPhase.LOBBY) }
             rememberFriend(state.playerName, name, state.matchId)
-            p2p.sendPlayerJoin(endpointId, state.playerName, state.matchId)
-            p2p.sendMessage(endpointId, MessageType.REQUEST_SYNC.name)
+            transport.sendPlayerJoin(endpointId, state.playerName, state.matchId)
+            transport.sendMessage(endpointId, MessageType.REQUEST_SYNC.name)
         }
     }
 
@@ -392,7 +573,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun handleMessage(endpointId: String, message: com.archerypal.data.P2PMessage) {
+    private fun handleMessage(endpointId: String, message: com.archerypal.app.data.P2PMessage) {
         when (message.type) {
             MessageType.PLAYER_JOIN.name -> handlePlayerJoin(endpointId, message)
             MessageType.MATCH_SETUP.name -> handleMatchSetup(message)
@@ -404,12 +585,19 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun handlePlayerJoin(endpointId: String, message: com.archerypal.data.P2PMessage) {
+    private fun handlePlayerJoin(endpointId: String, message: com.archerypal.app.data.P2PMessage) {
         if (!_uiState.value.isHost) return
         val payload = message.payload ?: return
         val playerName = payload["player_name"]?.jsonPrimitive?.content ?: return
         endpointNames[endpointId] = playerName
-        rememberFriend(playerName, _uiState.value.playerName, _uiState.value.matchId)
+        rememberFriend(
+            playerName,
+            _uiState.value.playerName,
+            _uiState.value.matchId,
+            libp2pPeerId(),
+            libp2pCircuitMultiaddrs(),
+            libp2pMultiaddrs()
+        )
         _uiState.update { state ->
             val updated = state.players.filterNot { it.endpointId == endpointId } +
                 PlayerInfo(playerName, endpointId)
@@ -418,20 +606,23 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         broadcastMatchState()
     }
 
-    private fun handleMatchSetup(message: com.archerypal.data.P2PMessage) {
+    private fun handleMatchSetup(message: com.archerypal.app.data.P2PMessage) {
         val payload = message.payload ?: return
         val count = payload["target_count"]?.jsonPrimitive?.int ?: return
+        val scoringType = parseScoringType(payload["scoring_type"]?.jsonPrimitive?.content)
         _uiState.update {
             it.copy(
                 targetCount = count,
                 targetCountInput = count.toString(),
+                scoringType = scoringType,
                 phase = MatchPhase.SCORING,
-                statusMessage = "Match started"
+                pendingScore = "",
+                statusMessage = "Match started · ${scoringType.label}"
             )
         }
     }
 
-    private fun handleScoreSubmit(endpointId: String, message: com.archerypal.data.P2PMessage) {
+    private fun handleScoreSubmit(endpointId: String, message: com.archerypal.app.data.P2PMessage) {
         if (!_uiState.value.isHost) return
         val payload = message.payload ?: return
         val entry = ScoreEntry(
@@ -440,9 +631,10 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             targetIndex = payload["target_index"]?.jsonPrimitive?.int ?: return,
             scoreValue = payload["score_value"]?.jsonPrimitive?.int ?: return
         )
+        if (!_uiState.value.scoringType.isValidScore(entry.scoreValue)) return
         mergeScore(entry)
         broadcastMatchState()
-        p2p.sendMessage(
+        transport.sendMessage(
             endpointId,
             MessageType.SCORE_ACK.name,
             buildJsonObject {
@@ -452,17 +644,19 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun handleMatchState(message: com.archerypal.data.P2PMessage) {
+    private fun handleMatchState(message: com.archerypal.app.data.P2PMessage) {
         val payload = message.payload ?: return
         runCatching {
             AppJson.decodeFromJsonElement(MatchState.serializer(), payload)
         }.onSuccess { state ->
+            val scoringType = parseScoringType(state.scoringType)
             _uiState.update {
                 it.copy(
                     matchId = state.matchId,
                     phase = runCatching { MatchPhase.valueOf(state.phase) }.getOrDefault(MatchPhase.LOBBY),
                     targetCount = state.targetCount,
                     targetCountInput = if (state.targetCount > 0) state.targetCount.toString() else "",
+                    scoringType = scoringType,
                     players = state.players,
                     scores = state.scores
                 )
@@ -470,7 +664,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun handleMatchFinished(message: com.archerypal.data.P2PMessage) {
+    private fun handleMatchFinished(message: com.archerypal.app.data.P2PMessage) {
         val payload = message.payload ?: return
         val winner = payload["winner_name"]?.jsonPrimitive?.content ?: return
         val targetCount = payload["target_count"]?.jsonPrimitive?.int ?: _uiState.value.targetCount
@@ -490,6 +684,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                     matchId = matchId,
                     completedAt = System.currentTimeMillis(),
                     targetCount = targetCount,
+                    scoringType = parseScoringType(payload["scoring_type"]?.jsonPrimitive?.content).name,
                     playerNames = players,
                     winnerName = winner,
                     finalScores = totals
@@ -507,7 +702,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun handleScoreAck(message: com.archerypal.data.P2PMessage) {
+    private fun handleScoreAck(message: com.archerypal.app.data.P2PMessage) {
         val payload = message.payload ?: return
         val player = payload["player_name"]?.jsonPrimitive?.content
         val target = payload["target_index"]?.jsonPrimitive?.int
@@ -525,26 +720,24 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun mergeScore(entry: ScoreEntry) {
         _uiState.update { state ->
-            val filtered = state.scores.filterNot {
-                scoreKey(it.playerName, it.targetIndex) == scoreKey(entry.playerName, entry.targetIndex)
-            }
-            state.copy(scores = filtered + entry)
+            state.copy(scores = replaceScore(state.scores, entry))
         }
     }
 
-    private fun submitScoreToHost(entry: ScoreEntry) {
-        val payload = buildJsonObject {
-            put("match_id", entry.matchId)
-            put("player_name", entry.playerName)
-            put("target_index", entry.targetIndex)
-            put("score_value", entry.scoreValue)
+    private fun replaceScore(scores: List<ScoreEntry>, entry: ScoreEntry): List<ScoreEntry> {
+        val filtered = scores.filterNot {
+            scoreKey(it.playerName, it.targetIndex) == scoreKey(entry.playerName, entry.targetIndex)
         }
-        _uiState.update { it.copy(pendingQueue = it.pendingQueue + entry) }
-        val hostId = _uiState.value.hostEndpointId ?: p2p.connectedEndpoints.value.firstOrNull()
-        if (hostId != null) {
-            p2p.sendMessage(hostId, MessageType.SCORE_SUBMIT.name, payload)
-        }
+        return filtered + entry
     }
+
+    private fun scoreForPlayerTarget(state: UiState, playerName: String, targetIndex: Int): Int? {
+        return state.scores.find { it.playerName == playerName && it.targetIndex == targetIndex }?.scoreValue
+            ?: state.pendingQueue.find { it.playerName == playerName && it.targetIndex == targetIndex }?.scoreValue
+    }
+
+    private fun nextTargetAfterSubmit(currentTarget: Int, targetCount: Int): Int =
+        if (currentTarget < targetCount) currentTarget + 1 else currentTarget
 
     private fun finalizeAndPersistMatch(broadcast: Boolean) {
         val state = _uiState.value
@@ -559,6 +752,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             matchId = state.matchId,
             completedAt = System.currentTimeMillis(),
             targetCount = state.targetCount,
+            scoringType = state.scoringType.name,
             playerNames = players,
             winnerName = winner,
             finalScores = totals
@@ -580,17 +774,21 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 put("match_id", state.matchId)
                 put("winner_name", winner)
                 put("target_count", state.targetCount)
+                put("scoring_type", state.scoringType.name)
                 put("player_names", players.joinToString(","))
                 put("final_scores", scoresJson)
             }
-            p2p.broadcast(MessageType.MATCH_FINISHED.name, payload)
+            transport.broadcast(MessageType.MATCH_FINISHED.name, payload)
             broadcastMatchState()
         }
     }
 
-    private fun broadcastMatchSetup(targetCount: Int) {
-        val payload = buildJsonObject { put("target_count", targetCount) }
-        p2p.broadcast(MessageType.MATCH_SETUP.name, payload)
+    private fun broadcastMatchSetup(targetCount: Int, scoringType: ScoringType) {
+        val payload = buildJsonObject {
+            put("target_count", targetCount)
+            put("scoring_type", scoringType.name)
+        }
+        transport.broadcast(MessageType.MATCH_SETUP.name, payload)
     }
 
     private fun broadcastMatchState() {
@@ -600,16 +798,18 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             phase = state.phase.name,
             hostName = state.playerName,
             targetCount = state.targetCount,
+            scoringType = state.scoringType.name,
             players = state.players,
             scores = state.scores
         )
         val payload = AppJson.encodeToString(MatchState.serializer(), matchState)
             .let { AppJson.parseToJsonElement(it).jsonObject }
-        p2p.broadcast(MessageType.MATCH_STATE.name, payload)
+        transport.broadcast(MessageType.MATCH_STATE.name, payload)
     }
 
     override fun onCleared() {
-        p2p.shutdown()
+        billingManager.destroy()
+        transport.release()
         super.onCleared()
     }
 }

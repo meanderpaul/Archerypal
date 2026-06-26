@@ -1,4 +1,4 @@
-package com.archerypal.data
+package com.archerypal.app.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
@@ -43,15 +43,32 @@ class PersistenceRepository(private val context: Context) {
         update { it.copy(playerName = name.trim()) }
     }
 
-    suspend fun rememberFriend(name: String, hostName: String?, matchId: String?) {
+    suspend fun setAdFree(adFree: Boolean) {
+        update { it.copy(isAdFree = adFree) }
+    }
+
+    suspend fun rememberFriend(
+        name: String,
+        hostName: String?,
+        matchId: String?,
+        libp2pPeerId: String? = null,
+        libp2pCircuitMultiaddrs: List<String> = emptyList(),
+        libp2pMultiaddrs: List<String> = emptyList()
+    ) {
         val trimmed = name.trim()
         if (trimmed.isBlank()) return
         update { data ->
+            val existing = data.friends.firstOrNull { it.name.equals(trimmed, ignoreCase = true) }
             val others = data.friends.filterNot { it.name.equals(trimmed, ignoreCase = true) }
             val friend = SavedFriend(
                 name = trimmed,
-                lastHostName = hostName,
-                lastMatchId = matchId,
+                lastHostName = hostName ?: existing?.lastHostName,
+                lastMatchId = matchId ?: existing?.lastMatchId,
+                lastLibp2pPeerId = libp2pPeerId ?: existing?.lastLibp2pPeerId,
+                lastLibp2pCircuitMultiaddrs = libp2pCircuitMultiaddrs.ifEmpty {
+                    existing?.lastLibp2pCircuitMultiaddrs.orEmpty()
+                },
+                lastLibp2pMultiaddrs = libp2pMultiaddrs.ifEmpty { existing?.lastLibp2pMultiaddrs.orEmpty() },
                 lastSeenAt = System.currentTimeMillis()
             )
             data.copy(friends = listOf(friend) + others)

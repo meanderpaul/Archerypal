@@ -1,4 +1,4 @@
-package com.archerypal.ui.components
+package com.archerypal.app.ui.components
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image

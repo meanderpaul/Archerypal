@@ -1,4 +1,4 @@
-package com.archerypal.ui.screens
+package com.archerypal.app.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,12 +17,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.archerypal.data.LeaderboardRow
-import com.archerypal.data.SavedFriend
-import com.archerypal.ui.components.OutdoorCard
-import com.archerypal.ui.components.PrimaryActionButton
-import com.archerypal.ui.components.RankedLeaderboardList
-import com.archerypal.ui.components.SecondaryActionButton
+import com.archerypal.app.data.LeaderboardRow
+import com.archerypal.app.data.SavedFriend
+import com.archerypal.app.ads.AdIds
+import com.archerypal.app.ui.components.BannerAdView
+import com.archerypal.app.ui.components.OutdoorCard
+import com.archerypal.app.ui.components.PrimaryActionButton
+import com.archerypal.app.ui.components.RankedLeaderboardList
+import com.archerypal.app.ui.components.SecondaryActionButton
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -35,7 +37,10 @@ fun HomeScreen(
     onResyncJoin: (String) -> Unit,
     savedFriends: List<SavedFriend>,
     lastMatchGroup: List<String>,
-    globalLeaderboard: List<LeaderboardRow>
+    globalLeaderboard: List<LeaderboardRow>,
+    isAdFree: Boolean = false,
+    removeAdsPrice: String? = null,
+    onRemoveAds: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -60,6 +65,32 @@ fun HomeScreen(
         )
         PrimaryActionButton("Host match", onHost, enabled = playerName.isNotBlank())
         SecondaryActionButton("Join match", onJoin)
+
+        if (isAdFree) {
+            OutdoorCard {
+                Text("Ad-free", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Thanks for supporting Archerypal.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        } else {
+            OutdoorCard {
+                Text("Support the app", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Remove ads with a one-time purchase.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                SecondaryActionButton(
+                    text = removeAdsPrice?.let { "Remove ads · $it" } ?: "Remove ads",
+                    onClick = onRemoveAds
+                )
+            }
+        }
 
         if (lastMatchGroup.isNotEmpty()) {
             OutdoorCard {
@@ -108,6 +139,10 @@ fun HomeScreen(
                 rows = globalLeaderboard,
                 emptyMessage = "Complete a match to start the board."
             )
+        }
+
+        if (!isAdFree) {
+            BannerAdView(adUnitId = AdIds.bannerUnitId)
         }
     }
 }

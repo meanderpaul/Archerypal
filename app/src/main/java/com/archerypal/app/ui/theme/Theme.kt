@@ -1,4 +1,4 @@
-package com.archerypal.ui.theme
+package com.archerypal.app.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme

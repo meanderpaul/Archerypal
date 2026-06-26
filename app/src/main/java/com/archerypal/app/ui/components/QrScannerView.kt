@@ -1,4 +1,4 @@
-package com.archerypal.ui.components
+package com.archerypal.app.ui.components
 
 import android.util.Size
 import androidx.camera.core.CameraSelector

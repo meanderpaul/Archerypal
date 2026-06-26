@@ -1,8 +1,9 @@
-package com.archerypal.ui.components
+package com.archerypal.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -17,14 +18,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.archerypal.data.LeaderboardRow
-import com.archerypal.data.Trophy
-import com.archerypal.ui.theme.CardSurface
-import com.archerypal.ui.theme.FieldGreen
-import com.archerypal.ui.theme.TargetGold
-import com.archerypal.ui.theme.TextSecondary
-import com.archerypal.ui.theme.TrophyBronze
-import com.archerypal.ui.theme.TrophySilver
+import com.archerypal.app.data.LeaderboardRow
+import com.archerypal.app.data.ScoringType
+import com.archerypal.app.data.Trophy
+import com.archerypal.app.ui.theme.CardSurface
+import com.archerypal.app.ui.theme.FieldGreen
+import com.archerypal.app.ui.theme.TargetGold
+import com.archerypal.app.ui.theme.TextSecondary
+import com.archerypal.app.ui.theme.TrophyBronze
+import com.archerypal.app.ui.theme.TrophySilver
 
 @Composable
 fun OutdoorCard(
@@ -69,10 +71,13 @@ fun SecondaryActionButton(
 
 @Composable
 fun ScorePad(
+    scoringType: ScoringType,
     pendingScore: String,
+    onPresetScore: (Int) -> Unit,
     onDigit: (String) -> Unit,
     onClear: () -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: () -> Unit,
+    submitLabel: String = "Submit score"
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -81,35 +86,90 @@ fun ScorePad(
             color = TargetGold,
             modifier = Modifier.padding(bottom = 8.dp)
         )
-        val rows = listOf(
-            listOf("1", "2", "3"),
-            listOf("4", "5", "6"),
-            listOf("7", "8", "9"),
-            listOf("C", "0", "10")
-        )
-        rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                row.forEach { label ->
-                    Button(
-                        onClick = {
-                            when (label) {
-                                "C" -> onClear()
-                                "10" -> {
-                                    onClear()
-                                    onDigit("1")
-                                    onDigit("0")
-                                }
-                                else -> onDigit(label)
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(label, fontWeight = FontWeight.Bold)
+        when (scoringType) {
+            ScoringType.FREEFORM -> FreeformScorePad(
+                pendingScore = pendingScore,
+                onDigit = onDigit,
+                onClear = onClear
+            )
+            else -> PresetScorePad(
+                scores = scoringType.allowedScores.orEmpty(),
+                pendingScore = pendingScore,
+                onPresetScore = onPresetScore,
+                onClear = onClear
+            )
+        }
+        PrimaryActionButton(submitLabel, onSubmit, enabled = pendingScore.isNotBlank())
+    }
+}
+
+@Composable
+private fun PresetScorePad(
+    scores: List<Int>,
+    pendingScore: String,
+    onPresetScore: (Int) -> Unit,
+    onClear: () -> Unit
+) {
+    val rows = scores.chunked(3)
+    rows.forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            row.forEach { score ->
+                val selected = pendingScore == score.toString()
+                Button(
+                    onClick = { onPresetScore(score) },
+                    modifier = Modifier.weight(1f),
+                    colors = if (selected) {
+                        ButtonDefaults.buttonColors(containerColor = TargetGold)
+                    } else {
+                        ButtonDefaults.buttonColors()
                     }
+                ) {
+                    Text(score.toString(), fontWeight = FontWeight.Bold)
+                }
+            }
+            repeat(3 - row.size) {
+                Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+    OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
+        Text("Clear", fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun FreeformScorePad(
+    pendingScore: String,
+    onDigit: (String) -> Unit,
+    onClear: () -> Unit
+) {
+    val rows = listOf(
+        listOf("1", "2", "3"),
+        listOf("4", "5", "6"),
+        listOf("7", "8", "9"),
+        listOf("C", "0")
+    )
+    rows.forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            row.forEach { label ->
+                Button(
+                    onClick = {
+                        when (label) {
+                            "C" -> onClear()
+                            else -> onDigit(label)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(label, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (row.size < 3) {
+                repeat(3 - row.size) {
+                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
-        PrimaryActionButton("Submit score", onSubmit, enabled = pendingScore.isNotBlank())
     }
 }
 
@@ -121,7 +181,7 @@ fun LeaderboardList(entries: List<Pair<String, Int>>) {
                 rank = index + 1,
                 name = name,
                 primaryLabel = "$total pts",
-                trophy = com.archerypal.data.trophyForRank(index + 1)
+                trophy = com.archerypal.app.data.trophyForRank(index + 1)
             )
         }
     )

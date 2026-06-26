@@ -1,4 +1,4 @@
-package com.archerypal.data
+package com.archerypal.app.data
 
 import kotlinx.serialization.Serializable
 
@@ -9,6 +9,9 @@ data class SavedFriend(
     val name: String,
     val lastHostName: String? = null,
     val lastMatchId: String? = null,
+    val lastLibp2pPeerId: String? = null,
+    val lastLibp2pCircuitMultiaddrs: List<String> = emptyList(),
+    val lastLibp2pMultiaddrs: List<String> = emptyList(),
     val lastSeenAt: Long = System.currentTimeMillis()
 )
 
@@ -26,6 +29,7 @@ data class SavedMatchRecord(
     val matchId: String,
     val completedAt: Long,
     val targetCount: Int,
+    val scoringType: String = ScoringType.ASA.name,
     val playerNames: List<String>,
     val winnerName: String,
     val finalScores: Map<String, Int>
@@ -38,7 +42,8 @@ data class PersistedAppData(
     val lastMatchGroup: List<String> = emptyList(),
     val lastHostName: String? = null,
     val globalStats: Map<String, PlayerGlobalStats> = emptyMap(),
-    val matchHistory: List<SavedMatchRecord> = emptyList()
+    val matchHistory: List<SavedMatchRecord> = emptyList(),
+    val isAdFree: Boolean = false
 )
 
 data class LeaderboardRow(
