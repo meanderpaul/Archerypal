@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Archerypal Design Refresh Mockup</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="page-header">
+    <div>
+      <h1>Archerypal · Design Refresh</h1>
+      <p>Compare current vs proposed. Scroll down for Match scoring (preset + freeform), Setup, and short-screen / foldable fit.</p>
+    </div>
+    <div class="legend">
+      <span class="pill current">Current</span>
+      <span class="pill proposed">Proposed</span>
+    </div>
+  </header>
+
+  <!-- Shoot -->
+  <section class="compare">
+    <h2>Shoot tab</h2>
+    <div class="frames">
+      <figure>
+        <figcaption>Current</figcaption>
+        <div class="phone current-theme">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen">
+            <h3 class="c-headline">Shoot</h3>
+            <div class="c-field">
+              <label>Display name</label>
+              <div class="c-input">Paul</div>
+            </div>
+            <div class="c-row">
+              <button class="c-btn-primary">Host</button>
+              <button class="c-btn-outline">Join</button>
+            </div>
+            <div class="c-card">
+              <div class="c-card-title">👥 Recent archers</div>
+              <div class="c-chips">
+                <span class="c-chip">Alex</span>
+                <span class="c-chip">Jordan</span>
+                <span class="c-chip">Sam</span>
+              </div>
+            </div>
+            <div class="c-card">
+              <div class="c-card-title">Invite link</div>
+              <div class="c-field" style="margin:8px 0 0">
+                <div class="c-input muted">Paste invite…</div>
+              </div>
+              <button class="c-btn-primary" style="margin-top:10px">Join with link</button>
+            </div>
+          </div>
+          <nav class="tab-bar current-theme">
+            <span>Shoot</span><span>Social</span><span>Standings</span><span>More</span>
+          </nav>
+        </div>
+      </figure>
+
+      <figure>
+        <figcaption>Proposed</figcaption>
+        <div class="phone proposed-theme">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen">
+            <div class="p-hero">
+              <p class="p-eyebrow">Range day</p>
+              <h3 class="p-headline">Shoot</h3>
+              <p class="p-sub">Host or join a nearby match</p>
+            </div>
+            <div class="p-field">
+              <label>Display name</label>
+              <div class="p-input">Paul</div>
+            </div>
+            <div class="p-row">
+              <button class="p-btn-primary">Host</button>
+              <button class="p-btn-ghost">Join</button>
+            </div>
+            <div class="p-card">
+              <div class="p-card-head">
+                <span class="p-icon">👥</span>
+                <span>Recent archers</span>
+              </div>
+              <div class="p-chips">
+                <span class="p-chip">Alex</span>
+                <span class="p-chip">Jordan</span>
+                <span class="p-chip">Sam</span>
+              </div>
+            </div>
+            <div class="p-card">
+              <div class="p-card-head">Invite link</div>
+              <div class="p-field" style="margin-top:8px">
+                <div class="p-input muted">Paste invite…</div>
+              </div>
+              <button class="p-btn-primary" style="margin-top:12px">Join with link</button>
+            </div>
+          </div>
+          <nav class="tab-bar proposed-theme">
+            <span class="active">Shoot</span><span>Social</span><span>Standings</span><span>More</span>
+          </nav>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Match ASA -->
+  <section class="compare">
+    <h2>Match scoring · ASA preset</h2>
+    <div class="frames">
+      <figure>
+        <figcaption>Current</figcaption>
+        <div class="phone current-theme tall">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen">
+            <h3 class="c-headline sm">Match in progress</h3>
+            <p class="c-status">Hosting · 3 archers</p>
+            <div class="c-tabs"><span class="on">Score</span><span>Leaderboard</span></div>
+            <div class="c-card">
+              <div class="c-card-title">Your scores</div>
+              <p class="c-meta">Target 4 of 20 · ASA · Total: 42</p>
+              <div class="c-target-row">
+                <span class="c-tchip">T1<br><b>12</b></span>
+                <span class="c-tchip">T2<br><b>10</b></span>
+                <span class="c-tchip">T3<br><b>8</b></span>
+                <span class="c-tchip on">T4<br><b>—</b></span>
+                <span class="c-tchip">T5<br><b>—</b></span>
+              </div>
+              <p class="c-hint">Tap a logged target to edit · scores advance automatically</p>
+            </div>
+            <div class="c-card">
+              <div class="c-card-title">Scoring target 4</div>
+              <div class="c-pad">
+                <button>12</button><button>10</button><button>8</button>
+                <button>5</button><button>0</button>
+              </div>
+              <button class="c-btn-outline full">Clear</button>
+            </div>
+            <button class="c-btn-primary full">Finish &amp; save match</button>
+            <button class="c-btn-outline full">Leave match</button>
+          </div>
+        </div>
+      </figure>
+
+      <figure>
+        <figcaption>Proposed</figcaption>
+        <div class="phone proposed-theme tall">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen match-proposed">
+            <div class="p-match-header">
+              <div>
+                <p class="p-eyebrow">Live match</p>
+                <h3 class="p-headline sm">Scoring</h3>
+                <p class="p-sub tight">Hosting · 3 archers</p>
+              </div>
+              <div class="p-header-actions">
+                <button class="p-icon-btn" title="Finish">✓</button>
+                <button class="p-icon-btn ghost" title="Leave">✕</button>
+              </div>
+            </div>
+            <div class="p-tabs"><span class="on">Score</span><span>Leaderboard</span></div>
+            <div class="p-card fill">
+              <div class="p-stat-strip">
+                <span>Target <b>4</b> of 20</span>
+                <span class="dot">·</span>
+                <span>ASA</span>
+                <span class="dot">·</span>
+                <span class="gold">Total <b>42</b></span>
+              </div>
+              <div class="p-target-row">
+                <span class="p-tchip done"><small>T1</small><b>12</b></span>
+                <span class="p-tchip done"><small>T2</small><b>10</b></span>
+                <span class="p-tchip done"><small>T3</small><b>8</b></span>
+                <span class="p-tchip current"><small>T4</small><b>—</b></span>
+                <span class="p-tchip"><small>T5</small><b>—</b></span>
+              </div>
+              <div class="p-pad-label">Tap a score</div>
+              <div class="p-pad preset">
+                <button>12</button><button class="sel">10</button><button>8</button>
+                <button>5</button><button>0</button>
+              </div>
+              <button class="p-btn-ghost full compact">Clear</button>
+            </div>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Match Freeform -->
+  <section class="compare">
+    <h2>Match scoring · Freeform keypad</h2>
+    <div class="frames">
+      <figure>
+        <figcaption>Current</figcaption>
+        <div class="phone current-theme tall">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen">
+            <h3 class="c-headline sm">Match in progress</h3>
+            <p class="c-status">Hosting · 2 archers</p>
+            <div class="c-tabs"><span class="on">Score</span><span>Leaderboard</span></div>
+            <div class="c-card">
+              <div class="c-card-title">Your scores</div>
+              <p class="c-meta">Target 2 of 12 · Freeform · Total: 18</p>
+              <div class="c-target-row">
+                <span class="c-tchip">T1<br><b>18</b></span>
+                <span class="c-tchip on">T2<br><b>—</b></span>
+              </div>
+            </div>
+            <div class="c-card">
+              <div class="c-card-title">Scoring target 2</div>
+              <div class="c-display">24</div>
+              <div class="c-pad">
+                <button>1</button><button>2</button><button>3</button>
+                <button>4</button><button>5</button><button>6</button>
+                <button>7</button><button>8</button><button>9</button>
+                <button>C</button><button>0</button>
+              </div>
+              <button class="c-btn-primary full">Submit score</button>
+            </div>
+            <button class="c-btn-primary full">Finish &amp; save match</button>
+            <button class="c-btn-outline full">Leave match</button>
+          </div>
+        </div>
+      </figure>
+
+      <figure>
+        <figcaption>Proposed</figcaption>
+        <div class="phone proposed-theme tall">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen match-proposed">
+            <div class="p-match-header">
+              <div>
+                <p class="p-eyebrow">Live match</p>
+                <h3 class="p-headline sm">Scoring</h3>
+                <p class="p-sub tight">Hosting · 2 archers</p>
+              </div>
+              <div class="p-header-actions">
+                <button class="p-icon-btn" title="Finish">✓</button>
+                <button class="p-icon-btn ghost" title="Leave">✕</button>
+              </div>
+            </div>
+            <div class="p-tabs"><span class="on">Score</span><span>Leaderboard</span></div>
+            <div class="p-card fill">
+              <div class="p-stat-strip">
+                <span>Target <b>2</b> of 12</span>
+                <span class="dot">·</span>
+                <span>Freeform</span>
+                <span class="dot">·</span>
+                <span class="gold">Total <b>18</b></span>
+              </div>
+              <div class="p-target-row">
+                <span class="p-tchip done"><small>T1</small><b>18</b></span>
+                <span class="p-tchip current"><small>T2</small><b>—</b></span>
+              </div>
+              <div class="p-display">24</div>
+              <div class="p-pad freeform">
+                <button>1</button><button>2</button><button>3</button>
+                <button>4</button><button>5</button><button>6</button>
+                <button>7</button><button>8</button><button>9</button>
+                <button class="mute">C</button><button>0</button>
+              </div>
+              <button class="p-btn-primary full">Submit score</button>
+            </div>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Setup -->
+  <section class="compare">
+    <h2>Match setup</h2>
+    <div class="frames">
+      <figure>
+        <figcaption>Current</figcaption>
+        <div class="phone current-theme">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen">
+            <h3 class="c-headline">Match setup</h3>
+            <div class="c-card">
+              <div>Archers ready: 3</div>
+              <p class="c-hint">Choose a scoring format and how many targets each archer will shoot.</p>
+            </div>
+            <div class="c-card-title" style="margin:4px 0">Scoring format</div>
+            <div class="c-chips wrap">
+              <span class="c-chip on">ASA</span>
+              <span class="c-chip">IBO</span>
+              <span class="c-chip">Universal</span>
+              <span class="c-chip">Freeform</span>
+            </div>
+            <p class="c-hint">12 / 10 / 8 / 5 / 0</p>
+            <div class="c-field">
+              <label>Number of targets</label>
+              <div class="c-input">20</div>
+            </div>
+            <div class="c-slider"></div>
+            <button class="c-btn-primary full">Start scoring</button>
+            <button class="c-btn-outline full">Cancel</button>
+          </div>
+        </div>
+      </figure>
+
+      <figure>
+        <figcaption>Proposed</figcaption>
+        <div class="phone proposed-theme">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen">
+            <div class="p-hero compact">
+              <p class="p-eyebrow">New match</p>
+              <h3 class="p-headline">Setup</h3>
+            </div>
+            <div class="p-card">
+              <div class="p-stat-strip">
+                <span>Archers ready</span>
+                <span class="gold"><b>3</b></span>
+              </div>
+              <p class="p-sub tight">Pick a format and target count before scoring starts.</p>
+            </div>
+            <div class="p-section-label">Scoring format</div>
+            <div class="p-chips wrap">
+              <span class="p-chip selected">ASA</span>
+              <span class="p-chip">IBO</span>
+              <span class="p-chip">Universal</span>
+              <span class="p-chip">Freeform</span>
+            </div>
+            <p class="p-sub tight">Allowed: 12 · 10 · 8 · 5 · 0</p>
+            <div class="p-field">
+              <label>Number of targets</label>
+              <div class="p-input">20</div>
+            </div>
+            <div class="p-slider"><div class="thumb" style="left:32%"></div></div>
+            <button class="p-btn-primary full">Start scoring</button>
+            <button class="p-btn-ghost full">Cancel</button>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Social -->
+  <section class="compare">
+    <h2>Social tab</h2>
+    <p class="section-note">Feed keeps its vertical scroll (per plan). The refresh targets depth: layered header, pill filters, bordered feed cards, and a cleaner action stack.</p>
+    <div class="frames">
+      <figure>
+        <figcaption>Current</figcaption>
+        <div class="phone current-theme tall">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen scrollable">
+            <div class="c-social-head">
+              <div>
+                <h3 class="c-headline">Social</h3>
+                <div class="c-profile-row">
+                  <span class="c-avatar">P</span>
+                  <div>
+                    <div class="c-profile-name">Paul</div>
+                    <div class="c-friend-code">AP-7F3K</div>
+                  </div>
+                </div>
+                <p class="c-hint" style="margin-top:4px">2 friends</p>
+                <p class="c-hint">Server connected</p>
+              </div>
+              <span class="c-icon-plain">👥</span>
+            </div>
+            <div class="c-chips">
+              <span class="c-chip on">All</span>
+              <span class="c-chip">Nearby</span>
+              <span class="c-chip">Friends</span>
+              <span class="c-chip">Global</span>
+              <span class="c-chip">Posts</span>
+            </div>
+            <div class="c-card">
+              <div class="c-card-title">Friend request</div>
+              <p class="c-meta">Jordan wants to connect</p>
+              <div class="c-row">
+                <button class="c-btn-primary">Accept</button>
+                <button class="c-btn-outline">Decline</button>
+              </div>
+            </div>
+            <div class="c-card">
+              <div class="c-card-title">Club 3D Shoot</div>
+              <p class="c-meta">Cedar Ridge Range · Sat 9:00 AM</p>
+              <p class="c-hint">Hosted by Alex · 6 going</p>
+              <span class="c-chip" style="margin-top:8px;display:inline-block">Join</span>
+            </div>
+            <div class="c-card">
+              <div class="c-profile-row">
+                <span class="c-avatar sm">A</span>
+                <div>
+                  <div class="c-profile-name">Alex</div>
+                  <p class="c-hint" style="margin:0">2h ago</p>
+                </div>
+              </div>
+              <p class="c-meta" style="margin-top:8px">New personal best at 40 yards today! 🎯</p>
+            </div>
+            <div class="c-fab-stack">
+              <span class="c-fab sm">✎</span>
+              <span class="c-fab">＋</span>
+            </div>
+          </div>
+          <nav class="tab-bar current-theme">
+            <span>Shoot</span><span>Social</span><span>Standings</span><span>More</span>
+          </nav>
+        </div>
+      </figure>
+
+      <figure>
+        <figcaption>Proposed</figcaption>
+        <div class="phone proposed-theme tall">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen scrollable">
+            <div class="p-social-head">
+              <div class="p-social-id">
+                <span class="p-avatar">P</span>
+                <div>
+                  <h3 class="p-headline sm">Social</h3>
+                  <div class="p-social-sub">
+                    <span>Paul</span>
+                    <span class="dot">·</span>
+                    <span class="gold">AP-7F3K</span>
+                    <span class="dot">·</span>
+                    <span>2 friends</span>
+                  </div>
+                </div>
+              </div>
+              <div class="p-header-actions">
+                <button class="p-icon-btn ghost" title="Friends">👥<span class="p-badge">1</span></button>
+              </div>
+            </div>
+            <div class="p-status-pill ok">● Server connected</div>
+            <div class="p-chips">
+              <span class="p-chip selected">All</span>
+              <span class="p-chip">Nearby<span class="p-chip-dot"></span></span>
+              <span class="p-chip">Friends</span>
+              <span class="p-chip">Global</span>
+              <span class="p-chip">Posts</span>
+            </div>
+            <div class="p-card accent">
+              <div class="p-card-head"><span class="p-icon">🤝</span><span>Friend request</span></div>
+              <p class="p-sub tight">Jordan wants to connect</p>
+              <div class="p-row" style="margin-top:8px">
+                <button class="p-btn-primary compact-h">Accept</button>
+                <button class="p-btn-ghost compact-h">Decline</button>
+              </div>
+            </div>
+            <div class="p-card event">
+              <div class="p-event-band">
+                <span class="p-event-type">3D SHOOT</span>
+                <span class="p-event-date">Sat · 9:00 AM</span>
+              </div>
+              <div class="p-card-head" style="margin-top:8px">Club 3D Shoot</div>
+              <p class="p-sub tight">Cedar Ridge Range</p>
+              <div class="p-event-footer">
+                <span class="p-sub tight">Hosted by Alex · <b class="gold">6 going</b></span>
+                <button class="p-btn-primary chip-size">Join</button>
+              </div>
+            </div>
+            <div class="p-card">
+              <div class="p-post-head">
+                <span class="p-avatar sm">A</span>
+                <div>
+                  <div class="p-post-name">Alex</div>
+                  <div class="p-sub tight">2h ago</div>
+                </div>
+              </div>
+              <p class="p-post-body">New personal best at 40 yards today! 🎯</p>
+            </div>
+            <div class="p-fab-stack">
+              <span class="p-fab sm">✎</span>
+              <span class="p-fab">＋</span>
+            </div>
+          </div>
+          <nav class="tab-bar proposed-theme">
+            <span>Shoot</span><span class="active">Social</span><span>Standings</span><span>More</span>
+          </nav>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Short screen -->
+  <section class="compare">
+    <h2>Short screen / foldable cover (~640dp height) · no scroll</h2>
+    <p class="section-note">Proposed layout compresses chrome into a header, uses one card, and lets the score pad flex — no vertical scroll.</p>
+    <div class="frames">
+      <figure>
+        <figcaption>Current (scrolls)</figcaption>
+        <div class="phone current-theme short">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen scrollable">
+            <h3 class="c-headline sm">Match in progress</h3>
+            <p class="c-status">Hosting · 3 archers</p>
+            <div class="c-tabs"><span class="on">Score</span><span>Leaderboard</span></div>
+            <div class="c-card">
+              <div class="c-card-title">Your scores</div>
+              <p class="c-meta">Target 4 of 20 · ASA · Total: 42</p>
+              <div class="c-target-row">
+                <span class="c-tchip on">T4<br><b>—</b></span>
+                <span class="c-tchip">T5<br><b>—</b></span>
+              </div>
+              <p class="c-hint">Tap a logged target to edit…</p>
+            </div>
+            <div class="c-card">
+              <div class="c-card-title">Scoring target 4</div>
+              <div class="c-pad">
+                <button>12</button><button>10</button><button>8</button>
+                <button>5</button><button>0</button>
+              </div>
+            </div>
+            <button class="c-btn-primary full">Finish &amp; save</button>
+            <button class="c-btn-outline full">Leave</button>
+            <div class="scroll-hint">↕ scrolls</div>
+          </div>
+        </div>
+      </figure>
+
+      <figure>
+        <figcaption>Proposed (fits)</figcaption>
+        <div class="phone proposed-theme short">
+          <div class="status-bar"><span>9:41</span><span>●●●</span></div>
+          <div class="screen match-proposed compact-fit">
+            <div class="p-match-header compact">
+              <div>
+                <h3 class="p-headline xs">T4 · ASA · <span class="gold">42</span></h3>
+                <p class="p-sub tight">3 archers</p>
+              </div>
+              <div class="p-header-actions">
+                <button class="p-icon-btn" title="Finish">✓</button>
+                <button class="p-icon-btn ghost" title="Leave">✕</button>
+              </div>
+            </div>
+            <div class="p-tabs compact"><span class="on">Score</span><span>Leaderboard</span></div>
+            <div class="p-card fill tight">
+              <div class="p-target-row dense">
+                <span class="p-tchip done"><small>T3</small><b>8</b></span>
+                <span class="p-tchip current"><small>T4</small><b>—</b></span>
+                <span class="p-tchip"><small>T5</small><b>—</b></span>
+              </div>
+              <div class="p-pad preset dense">
+                <button>12</button><button>10</button><button>8</button>
+                <button>5</button><button>0</button>
+              </div>
+            </div>
+            <div class="fit-badge">✓ fits · no scroll</div>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <footer class="page-footer">
+    <h3>Design notes</h3>
+    <ul>
+      <li><strong>Palette:</strong> lifted dusk-field greens, tonal cards with soft borders, gold reserved for scores.</li>
+      <li><strong>Chrome:</strong> Finish / Leave moved into the match header so the score pad owns vertical space.</li>
+      <li><strong>Fit strategy:</strong> reflow + compress first; scale score pad only if still too tall.</li>
+      <li>Approve this direction to proceed with Compose theme + MatchScreen changes.</li>
+    </ul>
+  </footer>
+</body>
+</html>

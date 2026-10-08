@@ -1,0 +1,16 @@
+# Shoot sync sources — copy to /etc/archerypal/shoot-sources.yaml on z800
+
+manual_file: /etc/archerypal/shoots-manual.json
+
+sources:
+  # Prefer iCal when a club publishes a Google Calendar export:
+  # - id: tri-county-club
+  #   type: ical
+  #   url: https://calendar.google.com/calendar/ical/.../public/basic.ics
+  #   region: Tri-County
+
+  # HTML fallback parses headings + dates from event pages:
+  # - id: example-club
+  #   type: html
+  #   url: https://example-club.org/events
+  #   region: Example Region

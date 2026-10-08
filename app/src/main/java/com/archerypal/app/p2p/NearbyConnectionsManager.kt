@@ -5,7 +5,6 @@ import com.archerypal.app.data.AppConstants
 import com.archerypal.app.data.AppJson
 import com.archerypal.app.data.DiscoveredHost
 import com.archerypal.app.data.P2PMessage
-import com.archerypal.app.p2p.libp2p.RelayReservationStatus
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.AdvertisingOptions
 import com.google.android.gms.nearby.connection.ConnectionInfo
@@ -37,7 +36,6 @@ sealed class P2PEvent {
     data class MessageReceived(val endpointId: String, val message: P2PMessage) : P2PEvent()
     data class HostDiscovered(val host: DiscoveredHost) : P2PEvent()
     data class Error(val message: String) : P2PEvent()
-    data class RelayStatusChanged(val status: RelayReservationStatus) : P2PEvent()
     data object AdvertisingStarted : P2PEvent()
     data object DiscoveryStarted : P2PEvent()
 }
@@ -85,7 +83,9 @@ class NearbyConnectionsManager(context: Context) {
                     val name = endpointDisplayNames[endpointId] ?: endpointId
                     _events.tryEmit(P2PEvent.EndpointConnected(endpointId, name))
                 }
-                else -> _events.tryEmit(P2PEvent.Error("Connection failed: ${result.status.statusCode}"))
+                else -> _events.tryEmit(
+                    P2PEvent.Error(connectionErrorMessage(result.status.statusCode))
+                )
             }
         }
 
@@ -165,15 +165,22 @@ class NearbyConnectionsManager(context: Context) {
         }
     }
 
-    fun sendPlayerJoin(endpointId: String, playerName: String, matchId: String) {
+    fun sendPlayerJoin(endpointId: String, playerName: String, matchId: String, friendCode: String? = null) {
         sendMessage(
             endpointId,
             "PLAYER_JOIN",
             buildJsonObject {
                 put("player_name", playerName)
                 put("match_id", matchId)
+                if (!friendCode.isNullOrBlank()) {
+                    put("friend_code", friendCode)
+                }
             }
         )
+    }
+
+    fun disconnectEndpoint(endpointId: String) {
+        connectionsClient.disconnectFromEndpoint(endpointId)
     }
 
     fun shutdown() {
@@ -181,5 +188,21 @@ class NearbyConnectionsManager(context: Context) {
         connectionsClient.stopDiscovery()
         connectionsClient.stopAllEndpoints()
         _connectedEndpoints.value = emptySet()
+    }
+
+    private fun connectionErrorMessage(statusCode: Int): String = when (statusCode) {
+        ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED ->
+            "Connection rejected by the host"
+        ConnectionsStatusCodes.STATUS_ALREADY_CONNECTED_TO_ENDPOINT ->
+            "Already connected to this host"
+        ConnectionsStatusCodes.STATUS_OUT_OF_ORDER_API_CALL ->
+            "Connection already in progress"
+        ConnectionsStatusCodes.STATUS_ENDPOINT_IO_ERROR ->
+            "Connection lost — move closer and try again"
+        ConnectionsStatusCodes.STATUS_ENDPOINT_UNKNOWN ->
+            "Host not found — make sure they are still advertising"
+        ConnectionsStatusCodes.STATUS_RADIO_ERROR ->
+            "Bluetooth or Wi-Fi error — check permissions and try again"
+        else -> "Connection failed ($statusCode)"
     }
 }

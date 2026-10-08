@@ -13,10 +13,12 @@
 
 -keepattributes *Annotation*, InnerClasses, EnclosingMethod, Signature
 -keepclassmembers class kotlinx.serialization.json.** { *; }
--keep @kotlinx.serialization.Serializable class com.archerypal.app.data.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+-dontwarn com.google.android.libraries.identity.googleid.**
 
--keep class io.libp2p.** { *; }
--dontwarn io.libp2p.**
--keep class io.libp2p.protocol.circuit.** { *; }
--keep class io.netty.** { *; }
--dontwarn io.netty.**
+-keep class androidx.credentials.** { *; }
+-dontwarn androidx.credentials.**
+
+-dontwarn android.os.ProfilingTrigger$Builder
+-dontwarn android.os.ProfilingTrigger
+

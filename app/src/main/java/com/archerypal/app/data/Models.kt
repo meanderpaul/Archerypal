@@ -10,6 +10,7 @@ object AppConstants {
     const val MAX_TARGETS = 60
     const val MIN_SCORE = 0
     const val FREEFORM_MAX_SCORE = 120
+    const val MAX_PLAYERS = 5
 }
 
 enum class ScoringType(val label: String, val description: String) {
@@ -57,6 +58,7 @@ enum class MatchPhase {
 
 enum class MessageType {
     PLAYER_JOIN,
+    PLAYER_JOIN_REJECTED,
     MATCH_SETUP,
     SCORE_SUBMIT,
     MATCH_STATE,
@@ -101,20 +103,14 @@ data class P2PMessage(
 data class QrPayload(
     val matchId: String,
     val hostName: String,
-    val serviceId: String = AppConstants.SERVICE_ID,
-    val libp2pPeerId: String? = null,
-    val libp2pCircuitMultiaddrs: List<String> = emptyList(),
-    val libp2pMultiaddrs: List<String> = emptyList()
+    val serviceId: String = AppConstants.SERVICE_ID
 )
 
 @Serializable
 data class DiscoveredHost(
     val endpointId: String,
     val hostName: String,
-    val matchId: String,
-    val libp2pPeerId: String? = null,
-    val libp2pCircuitMultiaddrs: List<String> = emptyList(),
-    val libp2pMultiaddrs: List<String> = emptyList()
+    val matchId: String
 )
 
 val AppJson = Json {

@@ -1,0 +1,14 @@
+# Local config-file tunnel (alternative to dashboard token install).
+# Copy credentials JSON from: cloudflared tunnel create archerypal
+# Path: /etc/cloudflared/<tunnel-id>.json
+
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+ingress:
+  - hostname: api.archerypal.app
+    service: http://127.0.0.1:8080
+    originRequest:
+      # WebSocket match relay
+      noTLSVerify: false
+  - service: http_status:404

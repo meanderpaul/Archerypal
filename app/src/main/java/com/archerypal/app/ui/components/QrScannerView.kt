@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -25,6 +26,7 @@ import java.util.concurrent.Executors
 @Composable
 fun QrScannerView(
     onQrScanned: (String) -> Unit,
+    previewHeight: Dp = 220.dp,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -43,7 +45,7 @@ fun QrScannerView(
     AndroidView(
         modifier = modifier
             .fillMaxWidth()
-            .height(220.dp),
+            .height(previewHeight),
         factory = { ctx ->
             PreviewView(ctx).apply {
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)

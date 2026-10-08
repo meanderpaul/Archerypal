@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  workers-prod-flags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Forbid unsafe Plus flags in wrangler.jsonc
+        run: |
+          if grep -E 'BYPASS_PLUS_ENTITLEMENT|ALLOW_UNVERIFIED_ENTITLEMENT_SYNC' workers/wrangler.jsonc; then
+            echo "Production wrangler.jsonc must not set BYPASS_PLUS_ENTITLEMENT or ALLOW_UNVERIFIED_ENTITLEMENT_SYNC"
+            exit 1
+          fi
+
+  go-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+      - name: Test
+        run: go test ./...
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Assemble debug
+        run: ./gradlew assembleDebug --stacktrace

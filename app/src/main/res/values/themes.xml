@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Archerypal" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.Archerypal" parent="android:Theme.Material.NoActionBar">
+        <!-- Matches OutdoorBackground so pre-Compose frames aren't a flat black void -->
+        <item name="android:windowBackground">#FF0F1F18</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

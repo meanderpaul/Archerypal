@@ -1,0 +1,14 @@
+[
+  {
+    "id": "manual-spring-fest-2026",
+    "title": "Spring Fest 3D",
+    "description": "Registration at the gate. Divisions for all skill levels.",
+    "locationName": "Oak Ridge Range",
+    "region": "Midwest",
+    "startsAt": 1751328000000,
+    "endsAt": 1751414400000,
+    "eventType": "3d",
+    "sourceUrl": "https://example.org/spring-fest",
+    "registrationUrl": "https://example.org/register"
+  }
+]

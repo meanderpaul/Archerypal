@@ -1,12 +1,8 @@
 package com.archerypal.app.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +18,7 @@ import com.archerypal.app.data.ScoringType
 import com.archerypal.app.ui.components.OutdoorCard
 import com.archerypal.app.ui.components.PrimaryActionButton
 import com.archerypal.app.ui.components.SecondaryActionButton
+import com.archerypal.app.ui.layout.AdaptiveScreenColumn
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -37,12 +34,7 @@ fun SetupScreen(
     val sliderValue = targetCountInput.toIntOrNull()?.toFloat()
         ?: AppConstants.MIN_TARGETS.toFloat()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    AdaptiveScreenColumn(scroll = true) { _ ->
         Text("Match setup", style = MaterialTheme.typography.headlineMedium)
         OutdoorCard {
             Text("Archers ready: $playerCount")
@@ -51,8 +43,8 @@ fun SetupScreen(
         Text("Scoring format", style = MaterialTheme.typography.titleMedium)
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
         ) {
             ScoringType.entries.forEach { type ->
                 FilterChip(
@@ -73,7 +65,8 @@ fun SetupScreen(
             label = { Text("Number of targets") },
             placeholder = { Text("e.g. 20") },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth()
         )
         Text(
             "Clear the field to type a new number, or use the slider.",

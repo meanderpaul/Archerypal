@@ -1,0 +1,27 @@
+[Unit]
+Description=Archerypal match relay server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=archerypal
+Group=archerypal
+EnvironmentFile=/etc/archerypal/config.env
+ExecStart=/opt/archerypal/bin/archerypal-server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/archerypal
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+# Copy to `.dev.vars` for local `wrangler dev` only. Never put these on production.
+BYPASS_PLUS_ENTITLEMENT=true
+ALLOW_UNVERIFIED_ENTITLEMENT_SYNC=true
+JWT_SECRET=dev-jwt-secret-change-me
+GOOGLE_OAUTH_CLIENT_ID=
+REVENUECAT_WEBHOOK_SECRET=
+ADMIN_API_KEY=
+# Leave unset until photo posts ship (R2 wired up). See README "Photo posts full-rollout checklist".
+# PHOTO_POSTS_ENABLED=true
+# Must match app local.properties `archerypal.app.client.key` (debug default below).
+APP_CLIENT_KEY=dev-app-client-key-change-me

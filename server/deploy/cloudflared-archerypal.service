@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare Tunnel for Archerypal API
+After=network-online.target archerypal.service
+Wants=network-online.target
+Requires=archerypal.service
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=-/etc/cloudflared/tunnel.env
+
+[Install]
+WantedBy=multi-user.target

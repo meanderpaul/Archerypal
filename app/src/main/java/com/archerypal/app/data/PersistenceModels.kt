@@ -6,12 +6,10 @@ enum class Trophy { GOLD, SILVER, BRONZE }
 
 @Serializable
 data class SavedFriend(
+    val friendCode: String = "",
     val name: String,
     val lastHostName: String? = null,
     val lastMatchId: String? = null,
-    val lastLibp2pPeerId: String? = null,
-    val lastLibp2pCircuitMultiaddrs: List<String> = emptyList(),
-    val lastLibp2pMultiaddrs: List<String> = emptyList(),
     val lastSeenAt: Long = System.currentTimeMillis()
 )
 
@@ -32,18 +30,29 @@ data class SavedMatchRecord(
     val scoringType: String = ScoringType.ASA.name,
     val playerNames: List<String>,
     val winnerName: String,
-    val finalScores: Map<String, Int>
+    val finalScores: Map<String, Int>,
+    val isRemote: Boolean = false
 )
 
 @Serializable
 data class PersistedAppData(
     val playerName: String = "",
+    @kotlinx.serialization.Transient val friendCode: String? = null,
+    @kotlinx.serialization.Transient val deviceSecret: String? = null,
+    /** Opaque server device id used in X-Device-Id (not the friend code). */
+    @kotlinx.serialization.Transient val deviceId: String? = null,
+    val serverRegistered: Boolean = false,
+    val googleAccountLinked: Boolean = false,
+    /** Masked only; loaded from EncryptedSharedPreferences, never full email in DataStore. */
+    @kotlinx.serialization.Transient val googleAccountEmail: String? = null,
     val friends: List<SavedFriend> = emptyList(),
     val lastMatchGroup: List<String> = emptyList(),
     val lastHostName: String? = null,
     val globalStats: Map<String, PlayerGlobalStats> = emptyMap(),
     val matchHistory: List<SavedMatchRecord> = emptyList(),
-    val isAdFree: Boolean = false
+    val isAdFree: Boolean = false,
+    val isPlusActive: Boolean = false,
+    val feedLastSeenAt: Map<String, Long> = emptyMap()
 )
 
 data class LeaderboardRow(
@@ -51,7 +60,8 @@ data class LeaderboardRow(
     val name: String,
     val primaryLabel: String,
     val secondaryLabel: String? = null,
-    val trophy: Trophy? = null
+    val trophy: Trophy? = null,
+    val friendCode: String? = null
 )
 
 fun computeAverage(totalPoints: Int, matchesPlayed: Int): Double =
@@ -99,5 +109,18 @@ fun globalLeaderboardRows(stats: List<PlayerGlobalStats>): List<LeaderboardRow> 
                 append(" matches")
             },
             trophy = trophyForRank(rank)
+        )
+    }
+
+fun onlineLeaderboardRows(entries: List<com.archerypal.app.remote.LeaderboardEntry>): List<LeaderboardRow> =
+    entries.mapIndexed { index, entry ->
+        val rank = index + 1
+        LeaderboardRow(
+            rank = rank,
+            name = entry.displayName,
+            primaryLabel = "${entry.matchesWon} wins",
+            secondaryLabel = "${entry.totalPoints} pts · ${entry.matchesPlayed} matches",
+            trophy = trophyForRank(rank),
+            friendCode = entry.friendCode
         )
     }

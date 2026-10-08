@@ -1,37 +1,49 @@
 package com.archerypal.app.billing
 
-import android.app.Activity
 import android.content.Context
-import com.android.billingclient.api.AcknowledgePurchaseParams
-import com.android.billingclient.api.BillingClient
-import com.android.billingclient.api.BillingClientStateListener
-import com.android.billingclient.api.BillingFlowParams
-import com.android.billingclient.api.BillingResult
-import com.android.billingclient.api.PendingPurchasesParams
-import com.android.billingclient.api.ProductDetails
-import com.android.billingclient.api.Purchase
-import com.android.billingclient.api.PurchasesUpdatedListener
-import com.android.billingclient.api.QueryProductDetailsParams
-import com.android.billingclient.api.QueryPurchasesParams
+import com.revenuecat.purchases.CustomerInfo
+import com.revenuecat.purchases.PackageType
+import com.revenuecat.purchases.Purchases
+import com.revenuecat.purchases.PurchasesError
+import com.revenuecat.purchases.interfaces.ReceiveCustomerInfoCallback
+import com.revenuecat.purchases.interfaces.UpdatedCustomerInfoListener
+import com.revenuecat.purchases.getOfferingsWith
+import com.revenuecat.purchases.logInWith
+import com.revenuecat.purchases.restorePurchasesWith
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * RevenueCat billing aligned with Play products:
+ * - `1plus` → [RevenueCatConfig.ENTITLEMENT_PRO]
+ * - `1.adfree` → [RevenueCatConfig.ENTITLEMENT_AD_FREE]
+ * - `lifetime` → Pro via promotional grant only (not sold in Paywall)
+ *
+ * Purchases are presented via RevenueCat Paywall UI; this class owns CustomerInfo.
+ */
 class BillingManager(
     context: Context,
     private val scope: CoroutineScope,
-    private val onAdFreeGranted: suspend () -> Unit
-) : PurchasesUpdatedListener {
+    private val onAdFreeChanged: suspend (owned: Boolean) -> Unit,
+    private val onPlusGranted: suspend (active: Boolean, sku: String?, purchaseToken: String?) -> Unit
+) : UpdatedCustomerInfoListener {
 
     private val appContext = context.applicationContext
 
     private val _isAdFree = MutableStateFlow(false)
     val isAdFree: StateFlow<Boolean> = _isAdFree.asStateFlow()
 
+    private val _isPlusActive = MutableStateFlow(false)
+    val isPlusActive: StateFlow<Boolean> = _isPlusActive.asStateFlow()
+
     private val _removeAdsPrice = MutableStateFlow<String?>(null)
     val removeAdsPrice: StateFlow<String?> = _removeAdsPrice.asStateFlow()
+
+    private val _plusPrice = MutableStateFlow<String?>(null)
+    val plusPrice: StateFlow<String?> = _plusPrice.asStateFlow()
 
     private val _billingReady = MutableStateFlow(false)
     val billingReady: StateFlow<Boolean> = _billingReady.asStateFlow()
@@ -39,180 +51,234 @@ class BillingManager(
     private val _billingMessage = MutableStateFlow<String?>(null)
     val billingMessage: StateFlow<String?> = _billingMessage.asStateFlow()
 
-    private var removeAdsProductDetails: ProductDetails? = null
+    private var lastPlusSku: String? = null
+    private var loggedInFriendCode: String? = null
+    private var desiredDisplayName: String? = null
+    private var syncedDisplayName: Pair<String, String?>? = null
+    private var pendingEmail: Pair<String, String>? = null
 
-    private val billingClient: BillingClient = BillingClient.newBuilder(appContext)
-        .setListener(this)
-        .enablePendingPurchases(
-            PendingPurchasesParams.newBuilder()
-                .enableOneTimeProducts()
-                .build()
-        )
-        .enableAutoServiceReconnection()
-        .build()
+    fun plusCredentials(): Pair<String?, String?> = lastPlusSku to null
 
     fun startConnection() {
-        if (billingClient.isReady) {
-            onBillingReady()
+        RevenueCatConfig.configure(appContext)
+        if (!RevenueCatConfig.isConfigured() || !Purchases.isConfigured) {
+            _billingReady.value = false
+            _billingMessage.value =
+                "RevenueCat API key missing. Add revenuecat.api.key to local.properties."
             return
         }
-        billingClient.startConnection(object : BillingClientStateListener {
-            override fun onBillingSetupFinished(billingResult: BillingResult) {
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    onBillingReady()
-                } else {
-                    _billingReady.value = false
-                    _billingMessage.value = billingErrorMessage(billingResult)
-                }
+        Purchases.sharedInstance.updatedCustomerInfoListener = this
+        _billingReady.value = true
+        refreshOfferings()
+        Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
+            override fun onReceived(customerInfo: CustomerInfo) {
+                applyCustomerInfo(customerInfo)
             }
 
-            override fun onBillingServiceDisconnected() {
-                _billingReady.value = false
+            override fun onError(error: PurchasesError) {
+                _billingMessage.value = error.message
+            }
+        })
+    }
+
+    fun logIn(friendCode: String, forceRefresh: Boolean = false) {
+        val code = friendCode.trim()
+        if (code.isEmpty() || !Purchases.isConfigured) return
+        // Already identified — skip network churn on every DataStore emit.
+        // CustomerInfo still refreshes via startConnection, purchases, and explicit refresh.
+        if (!forceRefresh && loggedInFriendCode == code) {
+            syncDisplayName()
+            return
+        }
+        Purchases.sharedInstance.logInWith(
+            appUserID = code,
+            onError = { error -> _billingMessage.value = error.message },
+            onSuccess = { info, _ ->
+                loggedInFriendCode = code
+                syncDisplayName()
+                applyCustomerInfo(info)
+            }
+        )
+    }
+
+    /** Shown on the RevenueCat customer page so support can find players by name, not just Friend Code. */
+    fun setCustomerDisplayName(displayName: String?) {
+        desiredDisplayName = displayName?.trim()?.takeIf { it.isNotEmpty() }
+        syncDisplayName()
+    }
+
+    /**
+     * Google account email for support lookup in RevenueCat. Only available at sign-in time,
+     * so it is held in memory until [friendCode]'s login completes, never persisted.
+     */
+    fun setCustomerEmail(friendCode: String?, email: String?) {
+        val code = friendCode?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val trimmed = email?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        pendingEmail = code to trimmed
+        syncDisplayName()
+    }
+
+    /** Must run after logIn — attributes set earlier stay on the previous RC user. */
+    private fun syncDisplayName() {
+        val code = loggedInFriendCode ?: return
+        if (!Purchases.isConfigured) return
+        pendingEmail?.takeIf { it.first == code }?.let { (_, email) ->
+            Purchases.sharedInstance.setEmail(email)
+            pendingEmail = null
+        }
+        val target = code to desiredDisplayName
+        if (syncedDisplayName == target) return
+        Purchases.sharedInstance.setDisplayName(desiredDisplayName)
+        syncedDisplayName = target
+    }
+
+    fun refreshCustomerInfo() {
+        if (!Purchases.isConfigured) return
+        Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
+            override fun onReceived(customerInfo: CustomerInfo) {
+                applyCustomerInfo(customerInfo)
+            }
+
+            override fun onError(error: PurchasesError) {
+                _billingMessage.value = error.message
             }
         })
     }
 
     fun setCachedAdFree(adFree: Boolean) {
-        _isAdFree.value = adFree
+        if (!_isAdFree.value) _isAdFree.value = adFree
+    }
+
+    fun setCachedPlusActive(active: Boolean) {
+        if (!_isPlusActive.value) _isPlusActive.value = active
     }
 
     fun clearBillingMessage() {
         _billingMessage.value = null
     }
 
-    fun launchRemoveAdsPurchase(activity: Activity) {
-        if (_isAdFree.value) return
-        if (!billingClient.isReady) {
-            _billingMessage.value = "Google Play billing is not ready yet. Try again in a moment."
-            startConnection()
+    /**
+     * Sync Play purchases onto the current RC app user, then refresh CustomerInfo.
+     * Promotional grants (dashboard gifts) are not returned by Play restore — they
+     * appear after [logIn] / [refreshCustomerInfo] for the Friend Code app user id.
+     */
+    fun restorePurchases(friendCode: String? = null) {
+        if (!Purchases.isConfigured) {
+            _billingMessage.value = "Billing is not ready."
             return
         }
-        val productDetails = removeAdsProductDetails
-        if (productDetails == null) {
-            _billingMessage.value = "Remove ads is not available yet. Check Play Console product setup."
-            queryRemoveAdsProduct()
-            return
-        }
-        val offerToken = productDetails.oneTimePurchaseOfferDetails?.offerToken
-        if (offerToken == null) {
-            _billingMessage.value = "Remove ads pricing is not configured yet."
-            return
-        }
-        val flowParams = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(
-                listOf(
-                    BillingFlowParams.ProductDetailsParams.newBuilder()
-                        .setProductDetails(productDetails)
-                        .setOfferToken(offerToken)
-                        .build()
-                )
+        val code = friendCode?.trim().orEmpty()
+        if (code.isNotEmpty()) {
+            // Ensure we are the Friend Code customer before restore/refresh so promo
+            // grants attached in the dashboard land on this device.
+            Purchases.sharedInstance.logInWith(
+                appUserID = code,
+                onError = { error -> _billingMessage.value = error.message },
+                onSuccess = { _, _ ->
+                    loggedInFriendCode = code
+                    syncDisplayName()
+                    runRestoreAndRefresh()
+                }
             )
-            .build()
-        val result = billingClient.launchBillingFlow(activity, flowParams)
-        if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-            _billingMessage.value = billingErrorMessage(result)
+        } else {
+            runRestoreAndRefresh()
         }
+    }
+
+    private fun runRestoreAndRefresh() {
+        Purchases.sharedInstance.restorePurchasesWith(
+            onError = { _billingMessage.value = it.message },
+            onSuccess = { restored ->
+                applyCustomerInfo(restored)
+                // Promo / dashboard grants often need a second CustomerInfo fetch.
+                Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
+                    override fun onReceived(customerInfo: CustomerInfo) {
+                        applyCustomerInfo(customerInfo)
+                        val pro = customerInfo.entitlements[RevenueCatConfig.ENTITLEMENT_PRO]
+                        _billingMessage.value = if (pro?.isActive == true) {
+                            "Purchases restored — Plus is active."
+                        } else {
+                            "No active Plus found for this account. " +
+                                "If you were gifted Plus, confirm the Friend Code matches " +
+                                "the RevenueCat customer that received the grant."
+                        }
+                    }
+
+                    override fun onError(error: PurchasesError) {
+                        _billingMessage.value = error.message
+                    }
+                })
+            }
+        )
     }
 
     fun destroy() {
-        billingClient.endConnection()
-    }
-
-    override fun onPurchasesUpdated(billingResult: BillingResult, purchases: MutableList<Purchase>?) {
-        when (billingResult.responseCode) {
-            BillingClient.BillingResponseCode.OK -> {
-                purchases?.forEach(::handlePurchase)
-            }
-            BillingClient.BillingResponseCode.USER_CANCELED -> Unit
-            else -> {
-                _billingMessage.value = billingErrorMessage(billingResult)
-            }
+        if (Purchases.isConfigured) {
+            Purchases.sharedInstance.updatedCustomerInfoListener = null
         }
     }
 
-    private fun onBillingReady() {
-        _billingReady.value = true
-        queryRemoveAdsProduct()
-        restorePurchases()
+    override fun onReceived(customerInfo: CustomerInfo) {
+        applyCustomerInfo(customerInfo)
     }
 
-    private fun queryRemoveAdsProduct() {
-        val params = QueryProductDetailsParams.newBuilder()
-            .setProductList(
-                listOf(
-                    QueryProductDetailsParams.Product.newBuilder()
-                        .setProductId(BillingProducts.REMOVE_ADS)
-                        .setProductType(BillingClient.ProductType.INAPP)
-                        .build()
-                )
-            )
-            .build()
-        billingClient.queryProductDetailsAsync(params) { billingResult, queryProductDetailsResult ->
-            if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-                return@queryProductDetailsAsync
-            }
-            val productDetails = queryProductDetailsResult.productDetailsList.firstOrNull()
-                ?: return@queryProductDetailsAsync
-            removeAdsProductDetails = productDetails
-            _removeAdsPrice.value = productDetails.oneTimePurchaseOfferDetails?.formattedPrice
-        }
+    fun onCustomerInfoUpdated(info: CustomerInfo) {
+        applyCustomerInfo(info)
     }
 
-    private fun restorePurchases() {
-        val params = QueryPurchasesParams.newBuilder()
-            .setProductType(BillingClient.ProductType.INAPP)
-            .build()
-        billingClient.queryPurchasesAsync(params) { billingResult, purchases ->
-            if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-                return@queryPurchasesAsync
-            }
-            val owned = purchases.any { purchase ->
-                purchase.products.contains(BillingProducts.REMOVE_ADS) &&
-                    purchase.purchaseState == Purchase.PurchaseState.PURCHASED
-            }
-            if (owned) {
-                grantAdFree()
-            }
-        }
-    }
-
-    private fun handlePurchase(purchase: Purchase) {
-        if (!purchase.products.contains(BillingProducts.REMOVE_ADS)) return
-        if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
-        if (!purchase.isAcknowledged) {
-            val params = AcknowledgePurchaseParams.newBuilder()
-                .setPurchaseToken(purchase.purchaseToken)
-                .build()
-            billingClient.acknowledgePurchase(params) { billingResult ->
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    grantAdFree()
-                } else {
-                    _billingMessage.value = billingErrorMessage(billingResult)
+    private fun refreshOfferings() {
+        if (!Purchases.isConfigured) return
+        Purchases.sharedInstance.getOfferingsWith(
+            onError = { /* keep last prices */ },
+            onSuccess = { offerings ->
+                val packages = offerings.current?.availablePackages.orEmpty()
+                for (pkg in packages) {
+                    val id = pkg.product.id
+                    val price = pkg.product.price.formatted
+                    when {
+                        id == BillingProducts.REMOVE_ADS ||
+                            id.contains("adfree", ignoreCase = true) -> {
+                            _removeAdsPrice.value = price
+                        }
+                        id == BillingProducts.PLUS_MONTHLY ||
+                            id.contains("1plus") ||
+                            pkg.packageType == PackageType.MONTHLY ||
+                            pkg.packageType == PackageType.ANNUAL -> {
+                            if (!id.contains("lifetime", ignoreCase = true) &&
+                                !id.startsWith("rc_promo")
+                            ) {
+                                _plusPrice.value = price
+                            }
+                        }
+                    }
                 }
             }
-        } else {
-            grantAdFree()
-        }
+        )
     }
 
-    private fun grantAdFree() {
-        if (_isAdFree.value) return
-        _isAdFree.value = true
+    private fun applyCustomerInfo(info: CustomerInfo) {
+        val proEnt = info.entitlements[RevenueCatConfig.ENTITLEMENT_PRO]
+        val adFreeEnt = info.entitlements[RevenueCatConfig.ENTITLEMENT_AD_FREE]
+        val plusActive = proEnt?.isActive == true
+        val adFreeActive = adFreeEnt?.isActive == true || plusActive
+
+        val productId = proEnt?.productIdentifier.orEmpty()
+        lastPlusSku = when {
+            !plusActive -> null
+            productId.contains("lifetime", ignoreCase = true) ||
+                productId.startsWith("rc_promo") -> BillingProducts.PLUS_LIFETIME
+            else -> BillingProducts.PLUS_MONTHLY
+        }
+
+        val plusChanged = _isPlusActive.value != plusActive
+        val adChanged = _isAdFree.value != adFreeActive
+        _isPlusActive.value = plusActive
+        _isAdFree.value = adFreeActive
+
         scope.launch {
-            onAdFreeGranted()
-        }
-    }
-
-    private fun billingErrorMessage(billingResult: BillingResult): String {
-        return when (billingResult.responseCode) {
-            BillingClient.BillingResponseCode.BILLING_UNAVAILABLE ->
-                "Billing is unavailable on this device."
-            BillingClient.BillingResponseCode.ITEM_UNAVAILABLE ->
-                "Remove ads is not available in Play Console yet."
-            BillingClient.BillingResponseCode.SERVICE_DISCONNECTED ->
-                "Lost connection to Google Play. Try again."
-            else -> billingResult.debugMessage.ifBlank {
-                "Purchase failed (code ${billingResult.responseCode})."
+            if (adChanged) onAdFreeChanged(adFreeActive)
+            if (plusChanged || plusActive) {
+                onPlusGranted(plusActive, lastPlusSku, null)
             }
         }
     }

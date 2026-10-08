@@ -7,18 +7,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 
 @Composable
-fun QrCodeImage(content: String, modifier: Modifier = Modifier) {
+fun QrCodeImage(
+    content: String,
+    size: Dp = 240.dp,
+    modifier: Modifier = Modifier
+) {
     val bitmap = remember(content) { generateQrBitmap(content) }
     Image(
         bitmap = bitmap.asImageBitmap(),
         contentDescription = "Match QR code",
-        modifier = modifier.size(240.dp)
+        modifier = modifier.size(size)
     )
 }
 

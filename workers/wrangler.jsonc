@@ -1,0 +1,38 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "archerypal-api",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-07",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"PUBLIC_WS_BASE": "wss://archerypal-api.pauljreedii.workers.dev"
+	},
+	"triggers": {
+		"crons": ["0 12 * * 1"]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "archerypal",
+			"database_id": "6ce5b011-b152-4674-8ea8-758e772061c1",
+			"migrations_dir": "migrations"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "MATCH_ROOM",
+				"class_name": "MatchRoom"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["MatchRoom"]
+		}
+	]
+}

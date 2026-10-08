@@ -1,0 +1,13 @@
+[Unit]
+Description=Archerypal shoot calendar sync
+After=network-online.target archerypal.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/archerypal/config.env
+ExecStart=/opt/archerypal/bin/shoot-sync -config /etc/archerypal/shoot-sources.yaml
+User=archerypal
+Group=archerypal
+
+[Install]
+WantedBy=multi-user.target

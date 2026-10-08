@@ -1,8 +1,8 @@
 # Google Play — Data safety form (Archerypal)
 
-**Last updated:** June 26, 2026
+**Last updated:** October 8, 2026
 
-Use this guide when completing **Play Console → App content → Data safety**. It reflects the current app: offline P2P scorekeeping, **Google AdMob** banner ads on the home screen (free users), and a one-time **Remove ads** in-app purchase via Google Play Billing.
+Use this guide when completing **Play Console → App content → Data safety**. It reflects the current app: local/P2P scorekeeping, optional online API (Friend ID, friends, feed, shoots, stats — free with Google Sign-In) plus **Plus** extras (posting, creating shoots, remote relay, global standings), **Google Sign-In** for account recovery, **Google AdMob** (free users), and Google Play Billing.
 
 **Privacy policy URL (store listing):**  
 `https://github.com/meanderpaul/Archerypal/blob/main/PRIVACY_POLICY.md`
@@ -14,23 +14,37 @@ Use this guide when completing **Play Console → App content → Data safety**.
 | Question | Answer |
 |----------|--------|
 | Does your app collect or share any of the required user data types? | **Yes** |
-| Is all of the user data collected by your app encrypted in transit? | **Yes** (for data transmitted off-device by third-party SDKs over HTTPS/TLS) |
-| Do you provide a way for users to request that their data is deleted? | **No** — Archerypal does not operate a user account or backend that stores personal data. Users can clear local app data in Android settings. For AdMob/Google data, direct users to [Google's privacy controls](https://myaccount.google.com/data-and-privacy). |
-| Is this data required for your app, or can users choose whether it's collected? | **Users can choose** — purchasing Remove ads stops home-screen ad requests; ad-related collection is tied to the free ad-supported experience. Match features do not require ads. |
+| Is all of the user data collected by your app encrypted in transit? | **Yes** (HTTPS/TLS to API and third-party SDKs) |
+| Do you provide a way for users to request that their data is deleted? | **Partial** — users can clear local data; server deletion during beta via support contact (self-service planned) |
+| Is this data required for your app, or can users choose whether it's collected? | **Users can choose** — offline play needs no server account; online features (Social, Plus) require registration and Google Sign-In |
 | Independent security review? | **No** (unless you opt in separately) |
+
+---
+
+## Data collected by **Archerypal API** (online features)
+
+Declare **Yes** for collection when users register for online features:
+
+| Data type | Notes |
+|-----------|--------|
+| Name | Display name stored with Friend ID (social / leaderboards) |
+| User IDs | Friend ID (`AP-XXXXXX`); Google account **subject** if linked for recovery |
+| Email | **Not retained** on the server. Verified via Google at sign-in; app may store a **masked** email on-device only |
+| Precise location | **Yes** when users use nearby feed filtering or create shoots with geocoded coordinates |
+| App activity | Match stats submitted to leaderboards after remote matches; text posts, shoots, RSVPs, friend requests |
+| Device or other IDs | FCM push tokens while registered (cleared on credential rotation / session clear) |
+| Other (device auth) | HMAC device credential hash (not the raw secret) |
+
+Local-only match scores for offline/Nearby play remain on-device unless submitted via remote match completion.
 
 ---
 
 ## Data Archerypal does **not** collect to its own servers
 
-Declare **No** for collection/sharing by **you** for these types (they stay on-device or sync device-to-device only):
-
 | Data type | Notes |
 |-----------|--------|
-| Name | Player names typed for matches — local storage + P2P only |
-| App activity (match scores, leaderboard) | Local + direct P2P; not sent to Archerypal servers |
-| Photos / videos | Camera used for QR scan only; not uploaded |
-| Location (precise GPS) | Not collected by Archerypal; Nearby API may use location APIs on-device for Bluetooth/Wi‑Fi discovery |
+| Photos / videos | Camera used for QR scan only; photo posts are off (`PHOTO_POSTS_ENABLED`). Update this row and declare Photos when they ship |
+| Full email address | Not stored in D1 after PII hardening; Google `sub` is the recovery key |
 | Financial info | Payment cards handled by Google Play only |
 
 ---
@@ -86,9 +100,19 @@ Recommended declarations for **Google AdMob** (when ads are shown):
 
 | Data type | Declaration |
 |-----------|-------------|
-| Purchase history / app permissions | Processed by **Google Play** for the Remove ads product. Archerypal only stores a local **ad-free entitlement** flag after Google confirms the purchase. Do **not** declare payment card data — Google handles that. |
+| Purchase history / app permissions | Processed by **Google Play** for Remove ads / Plus. Archerypal stores entitlement flags locally and Plus metadata on the API. Do **not** declare payment card data — Google handles that. |
 
-If Play Console asks about **Purchase history**: typically **No** for direct collection by the developer; entitlement is verified through Play Billing on-device.
+If Play Console asks about **Purchase history**: typically **No** for direct collection by the developer; entitlement is verified through Play Billing / RevenueCat.
+
+### RevenueCat
+
+The RevenueCat SDK receives the **Friend ID** (as the app user ID) and the **display name** (`$displayName` attribute, used to find customers in the RevenueCat dashboard for support). Email is **not** sent.
+
+| Data type | Collected? | Shared? | Purposes |
+|-----------|-----------|---------|----------|
+| Name | **Yes** | **Yes** (RevenueCat, service provider) | **Account management**, **App functionality** |
+| User IDs | **Yes** | **Yes** (RevenueCat, service provider) | **Account management**, **App functionality** |
+| Purchase history | **Yes** | **Yes** (RevenueCat, service provider) | **App functionality** |
 
 ---
 
@@ -105,8 +129,8 @@ Under **Ads**:
 
 ## Security practices (short answers)
 
-- Data encrypted in transit for third-party SDK traffic: **Yes**
-- Users can request data deletion from Archerypal: **No** (no Archerypal-operated account/database)
+- Data encrypted in transit: **Yes** (HTTPS / WSS)
+- Users can request data deletion from Archerypal: **Yes (support contact)** during beta
 - Committed to Play Families Policy: only if you target children (Archerypal is **not** directed at children under 13)
 
 ---
@@ -126,8 +150,11 @@ When a user owns **Remove ads**:
 - [ ] Privacy policy URL in Play Console points to `PRIVACY_POLICY.md` on GitHub `main`
 - [ ] **Ads** section marked Yes
 - [ ] Data safety form includes AdMob-related types per Google's current SDK guidance
-- [ ] In-app product `remove_ads` is active in Play Console
-- [ ] Store description mentions free version includes ads and optional ad removal purchase
+- [ ] Declare **precise location** if nearby feed / shoots are in the shipping build
+- [ ] Do **not** declare email collection for Archerypal servers (masked on-device only)
+- [ ] Declare **Name** and **User IDs** shared with RevenueCat (display name + Friend ID)
+- [ ] In-app products for ad-free / Plus are active in Play Console
+- [ ] Store description mentions free version includes ads and optional ad removal / Plus
 
 ---
 

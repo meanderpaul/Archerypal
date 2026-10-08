@@ -1,0 +1,14 @@
+[Unit]
+Description=Tailscale Funnel for Archerypal API (public HTTPS)
+After=network-online.target tailscaled.service archerypal.service
+Wants=network-online.target
+Requires=tailscaled.service archerypal.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/archerypal/bin/start-tailscale-funnel.sh
+ExecStop=/usr/bin/tailscale funnel --https=443 off
+
+[Install]
+WantedBy=multi-user.target

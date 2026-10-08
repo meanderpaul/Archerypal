@@ -1,44 +1,275 @@
 package com.archerypal.app.ui.screens
 
+import android.content.Intent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.archerypal.app.data.AppConstants
+import com.archerypal.app.data.PlayerInfo
 import com.archerypal.app.ui.components.OutdoorCard
 import com.archerypal.app.ui.components.PrimaryActionButton
 import com.archerypal.app.ui.components.QrCodeImage
 import com.archerypal.app.ui.components.SecondaryActionButton
+import com.archerypal.app.ui.layout.AdaptiveScreenColumn
 
 @Composable
 fun HostScreen(
     qrContent: String,
-    playerCount: Int,
+    players: List<PlayerInfo>,
+    connectedCount: Int,
     statusMessage: String,
-    transportLabel: String,
+    isRemoteMatch: Boolean = false,
+    remoteRoomId: String? = null,
+    remoteJoinToken: String? = null,
+    remoteInviteLink: String? = null,
+    hostName: String = "",
     onContinue: () -> Unit,
     onLeave: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    val joinerCount = players.count { !it.isHost }
+    val hostPlayer = players.firstOrNull { it.isHost }
+    val context = LocalContext.current
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+
+    AdaptiveScreenColumn(
+        scroll = true,
         horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    ) { metrics ->
         Text("Hosting", style = MaterialTheme.typography.headlineMedium)
-        OutdoorCard {
-            Text(statusMessage + transportLabel, style = MaterialTheme.typography.bodyLarge)
-            Text("Connected archers: $playerCount", modifier = Modifier.padding(top = 8.dp))
+
+        if (metrics.isExpandedWidth) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(metrics.sectionSpacing)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing)
+                ) {
+                    HostShareOrQr(
+                        isRemoteMatch = isRemoteMatch,
+                        remoteInviteLink = remoteInviteLink,
+                        remoteRoomId = remoteRoomId,
+                        remoteJoinToken = remoteJoinToken,
+                        hostName = hostName,
+                        qrContent = qrContent,
+                        qrCodeSize = metrics.qrCodeSize,
+                        showAdvanced = showAdvanced,
+                        onToggleAdvanced = { showAdvanced = !showAdvanced },
+                        onShare = { message ->
+                            val share = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, message)
+                            }
+                            context.startActivity(Intent.createChooser(share, "Share invite"))
+                        }
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing)
+                ) {
+                    HostStatusCard(
+                        isRemoteMatch = isRemoteMatch,
+                        statusMessage = statusMessage,
+                        joinerCount = joinerCount,
+                        connectedCount = connectedCount
+                    )
+                    HostLobbyCard(hostPlayer = hostPlayer, joinerCount = joinerCount, players = players)
+                }
+            }
+        } else {
+            HostStatusCard(
+                isRemoteMatch = isRemoteMatch,
+                statusMessage = statusMessage,
+                joinerCount = joinerCount,
+                connectedCount = connectedCount
+            )
+            HostLobbyCard(hostPlayer = hostPlayer, joinerCount = joinerCount, players = players)
+            HostShareOrQr(
+                isRemoteMatch = isRemoteMatch,
+                remoteInviteLink = remoteInviteLink,
+                remoteRoomId = remoteRoomId,
+                remoteJoinToken = remoteJoinToken,
+                hostName = hostName,
+                qrContent = qrContent,
+                qrCodeSize = metrics.qrCodeSize,
+                showAdvanced = showAdvanced,
+                onToggleAdvanced = { showAdvanced = !showAdvanced },
+                onShare = { message ->
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, message)
+                    }
+                    context.startActivity(Intent.createChooser(share, "Share invite"))
+                }
+            )
         }
-        QrCodeImage(qrContent)
-        Text("Ask joiners to scan this code — nearby or libp2p relay over cell", color = MaterialTheme.colorScheme.onBackground.copy(0.8f))
+
         PrimaryActionButton("Set up targets", onContinue)
+        Text(
+            "Continue to match setup — you can start with or without other archers",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+        )
         SecondaryActionButton("Leave match", onLeave)
+    }
+}
+
+@Composable
+private fun HostStatusCard(
+    isRemoteMatch: Boolean,
+    statusMessage: String,
+    joinerCount: Int,
+    connectedCount: Int
+) {
+    OutdoorCard {
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.padding(bottom = 12.dp)
+        ) {
+            Text(
+                text = if (isRemoteMatch) "Remote match" else "Advertising",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+        Text(statusMessage, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "$joinerCount / ${AppConstants.MAX_PLAYERS - 1} archers connected",
+            modifier = Modifier.padding(top = 8.dp),
+            style = MaterialTheme.typography.titleMedium
+        )
+        if (connectedCount > joinerCount) {
+            Text(
+                "$connectedCount device(s) connected — waiting for archer names…",
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+            )
+        }
+        Text(
+            "Up to ${AppConstants.MAX_PLAYERS} archers per match",
+            modifier = Modifier.padding(top = 4.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+        )
+    }
+}
+
+@Composable
+private fun HostLobbyCard(
+    hostPlayer: PlayerInfo?,
+    joinerCount: Int,
+    players: List<PlayerInfo>
+) {
+    OutdoorCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Lobby", style = MaterialTheme.typography.titleMedium)
+            hostPlayer?.let {
+                Text("You (host) — ${it.name}", style = MaterialTheme.typography.bodyLarge)
+            }
+            if (joinerCount == 0) {
+                Text(
+                    "No other archers yet — you can start solo or wait for joiners",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                )
+            } else {
+                players.filter { !it.isHost }.forEach { player ->
+                    Text("✓ ${player.name}", style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HostShareOrQr(
+    isRemoteMatch: Boolean,
+    remoteInviteLink: String?,
+    remoteRoomId: String?,
+    remoteJoinToken: String?,
+    hostName: String,
+    qrContent: String,
+    qrCodeSize: Dp,
+    showAdvanced: Boolean,
+    onToggleAdvanced: () -> Unit,
+    onShare: (String) -> Unit
+) {
+    if (isRemoteMatch && !remoteInviteLink.isNullOrBlank()) {
+        OutdoorCard(modifier = Modifier.fillMaxWidth()) {
+            Text("Share invite", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Send this link — your friend taps to join in Archerypal",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+            )
+            PrimaryActionButton(
+                text = "Share invite link",
+                onClick = {
+                    val message = buildString {
+                        append(hostName.ifBlank { "Your friend" })
+                        append(" challenged you to an Archerypal match!\n")
+                        append(remoteInviteLink)
+                    }
+                    onShare(message)
+                }
+            )
+            Text(
+                remoteInviteLink,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            Text(
+                if (showAdvanced) "Hide manual join details" else "Show manual join details",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .clickable(onClick = onToggleAdvanced)
+            )
+            if (showAdvanced && !remoteRoomId.isNullOrBlank() && !remoteJoinToken.isNullOrBlank()) {
+                Text(
+                    "Room ID: $remoteRoomId",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Text(
+                    "Join token: $remoteJoinToken",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    } else if (!isRemoteMatch) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            QrCodeImage(content = qrContent, size = qrCodeSize)
+            Text(
+                "Ask joiners to scan this code, or pick you from Nearby hosts",
+                color = MaterialTheme.colorScheme.onBackground.copy(0.8f),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
     }
 }

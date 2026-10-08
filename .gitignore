@@ -12,6 +12,19 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+*.p12
+/key
+/Key1
+/upload_certificate.pem
+**/google-play-sa.json
+**/firebase-adminsdk*.json
+**/*service-account*.json
+**/*-sa.json
+/secrets/*
+!/secrets/README.md
+
+# Firebase — add google-services.json locally (see docs/FCM_SETUP.md)
+app/google-services.json
 
 # IDE
 .idea/
@@ -21,3 +34,18 @@ keystore.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Local / generated artifacts — do not commit
+.tmp-libp2p/
+.tools/
+app/release/
+bugreport-*.zip
+*.apk
+*.aab
+server/deploy/archerypal-server
+server/deploy/*-linux-amd64
+server/deploy/*-linux-arm64
+server/deploy/*.bin
+workers/.dev.vars
+.kotlin/
+.cursor/mcp.json
