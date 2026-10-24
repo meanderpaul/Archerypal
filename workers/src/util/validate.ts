@@ -55,3 +55,11 @@ export function postBodyOk(body: string): boolean {
 	if (t.length < 1) return false;
 	return [...t].length <= 2000;
 }
+
+export const MAX_COMMENT_CHARS = 500;
+
+export function commentBodyOk(body: string): boolean {
+	const t = sanitizePostBody(body).trim();
+	if (t.length < 1) return false;
+	return [...t].length <= MAX_COMMENT_CHARS;
+}

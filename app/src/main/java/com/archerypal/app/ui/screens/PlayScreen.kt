@@ -16,10 +16,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.archerypal.app.data.SavedFriend
+import com.archerypal.app.remote.IncomingChallenge
+import com.archerypal.app.remote.RemoteFriend
 import com.archerypal.app.ui.components.InviteLinkJoinCard
 import com.archerypal.app.ui.components.OutdoorCard
 import com.archerypal.app.ui.components.PrimaryActionButton
@@ -36,15 +39,25 @@ fun PlayScreen(
     serverReachable: Boolean?,
     savedFriends: List<SavedFriend>,
     remoteFriendCodes: Set<String>,
+    remoteFriends: List<RemoteFriend>,
+    incomingChallenges: List<IncomingChallenge>,
     onHost: () -> Unit,
     onJoin: () -> Unit,
     onResyncJoin: (String) -> Unit,
     onAddFriend: (String) -> Unit,
     onJoinInvite: (String) -> Unit,
+    onJoinChallenge: (String) -> Unit,
+    onChallengeFriend: (String) -> Unit,
+    onRefreshRemote: () -> Unit,
     onRequestSignIn: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val enabled = playerName.isNotBlank()
+    val remoteAvailable = googleAccountLinked && serverReachable != false
+
+    LaunchedEffect(remoteAvailable) {
+        if (remoteAvailable) onRefreshRemote()
+    }
 
     AdaptiveScreenColumn(scroll = true, modifier = modifier) { metrics ->
         Column(
@@ -82,6 +95,13 @@ fun PlayScreen(
                     .fillMaxWidth()
                     .padding(bottom = 8.dp)
             )
+            if (remoteAvailable && incomingChallenges.isNotEmpty()) {
+                IncomingChallengesCard(
+                    challenges = incomingChallenges,
+                    enabled = enabled,
+                    onJoin = onJoinChallenge
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -96,6 +116,14 @@ fun PlayScreen(
                     text = "Join",
                     onClick = onJoin,
                     modifier = Modifier.weight(1f)
+                )
+            }
+            if (remoteAvailable) {
+                ChallengeFriendsCard(
+                    friends = remoteFriends,
+                    isPlusActive = isPlusActive,
+                    enabled = enabled,
+                    onChallenge = onChallengeFriend
                 )
             }
             RecentArchersRow(
@@ -132,6 +160,74 @@ fun PlayScreen(
                     }
                 }
                 else -> InviteLinkJoinCard(onJoin = onJoinInvite)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IncomingChallengesCard(
+    challenges: List<IncomingChallenge>,
+    enabled: Boolean,
+    onJoin: (String) -> Unit
+) {
+    OutdoorCard {
+        Text("You've been challenged", style = MaterialTheme.typography.titleMedium)
+        challenges.forEach { challenge ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    "${challenge.hostDisplayName} wants a match",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                PrimaryActionButton(
+                    text = "Join",
+                    onClick = { onJoin(challenge.roomId) },
+                    enabled = enabled,
+                    fillWidth = false
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChallengeFriendsCard(
+    friends: List<RemoteFriend>,
+    isPlusActive: Boolean,
+    enabled: Boolean,
+    onChallenge: (String) -> Unit
+) {
+    OutdoorCard {
+        Text("Challenge a friend", style = MaterialTheme.typography.titleMedium)
+        Text(
+            when {
+                friends.isEmpty() -> "Add friends from the Social tab to challenge them to a remote match."
+                isPlusActive -> "Tap a friend — they get a notification and join with one tap."
+                else -> "Remote matches need Archerypal Plus to host. Your friends join free."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        if (friends.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier.padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(friends, key = { it.friendCode }) { friend ->
+                    AssistChip(
+                        onClick = { onChallenge(friend.friendCode) },
+                        enabled = enabled,
+                        label = { Text(friend.displayName) }
+                    )
+                }
             }
         }
     }

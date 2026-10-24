@@ -47,10 +47,12 @@ import com.archerypal.app.remote.PostImagePreparer
 import com.archerypal.app.remote.CreateShootRequest
 import com.archerypal.app.remote.FeedFilter
 import com.archerypal.app.remote.FeedItem
+import com.archerypal.app.remote.IncomingChallenge
 import com.archerypal.app.remote.MutualFriendSuggestion
 import com.archerypal.app.remote.PlayerProfile
 import com.archerypal.app.remote.PlayerSearchResult
 import com.archerypal.app.remote.ProfileUpdateRequest
+import com.archerypal.app.remote.RemoteComment
 import com.archerypal.app.remote.RemoteFriend
 import com.archerypal.app.remote.RemoteFriendRequest
 import com.archerypal.app.remote.RemoteShoot
@@ -126,6 +128,10 @@ data class UiState(
     val isRemoteMatch: Boolean = false,
     val remoteRoomId: String? = null,
     val remoteJoinToken: String? = null,
+    /** Friend this device challenged (host side). */
+    val remoteOpponentName: String? = null,
+    val remoteOpponentNotified: Boolean = false,
+    val incomingChallenges: List<IncomingChallenge> = emptyList(),
     val matchHistory: List<SavedMatchRecord> = emptyList(),
     val remoteFriends: List<RemoteFriend> = emptyList(),
     val onlineGlobalLeaderboard: List<LeaderboardRow> = emptyList(),
@@ -154,6 +160,10 @@ data class UiState(
     val feedFilter: FeedFilter = FeedFilter.FRIEND_POSTS,
     val feedLoading: Boolean = false,
     val feedNewCounts: Map<FeedFilter, Int> = emptyMap(),
+    /** Loaded comment threads keyed by bare post id. */
+    val postComments: Map<String, List<RemoteComment>> = emptyMap(),
+    val commentsLoadingPostIds: Set<String> = emptySet(),
+    val commentSendingPostIds: Set<String> = emptySet(),
     val myProfile: PlayerProfile? = null,
     val viewingFriendProfile: PlayerProfile? = null,
     val deviceLocation: GeoPoint? = null,
@@ -414,6 +424,10 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 matchServerApi.friendSuggestions(creds)
                     .onSuccess { response ->
                         _uiState.update { it.copy(mutualFriendSuggestions = response.suggestions) }
+                    }
+                matchServerApi.incomingChallenges(creds)
+                    .onSuccess { response ->
+                        _uiState.update { it.copy(incomingChallenges = response.challenges) }
                     }
                 refreshFeedInternal()
             } finally {
@@ -727,6 +741,96 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadComments(postId: String) {
+        val creds = deviceCreds(persistedData) ?: return
+        if (postId in _uiState.value.commentsLoadingPostIds) return
+        _uiState.update { it.copy(commentsLoadingPostIds = it.commentsLoadingPostIds + postId) }
+        viewModelScope.launch {
+            matchServerApi.listComments(creds, postId)
+                .onSuccess { response ->
+                    _uiState.update {
+                        it.copy(
+                            postComments = it.postComments + (postId to response.comments),
+                            feedItems = it.feedItems.withCommentCount(postId, response.comments.size)
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(errorMessage = error.message ?: "Could not load comments")
+                    }
+                }
+            _uiState.update { it.copy(commentsLoadingPostIds = it.commentsLoadingPostIds - postId) }
+        }
+    }
+
+    fun addComment(postId: String, body: String) {
+        val text = body.trim()
+        if (text.isEmpty()) return
+        if (!_uiState.value.isPlusActive) {
+            _uiState.update { it.copy(errorMessage = "Archerypal Plus is required to comment") }
+            return
+        }
+        val creds = deviceCreds(persistedData)
+        if (creds == null) {
+            _uiState.update { it.copy(errorMessage = "Connect to the server to comment") }
+            return
+        }
+        _uiState.update { it.copy(commentSendingPostIds = it.commentSendingPostIds + postId) }
+        viewModelScope.launch {
+            // Best-effort: push a Play-verified token before the Plus-gated create.
+            syncPlusEntitlementOnServer(creds)
+            matchServerApi.createComment(creds, postId, text)
+                .onSuccess { response ->
+                    _uiState.update {
+                        val thread = it.postComments[postId].orEmpty() + response.comment
+                        it.copy(
+                            postComments = it.postComments + (postId to thread),
+                            feedItems = it.feedItems.withCommentCount(postId, thread.size)
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    val msg = error.message.orEmpty()
+                    val friendly = if (msg.contains("Plus required", ignoreCase = true)) {
+                        "Archerypal Plus could not be verified on the server. " +
+                            "Open More → restore purchases, then try again."
+                    } else {
+                        error.message ?: "Could not post comment"
+                    }
+                    _uiState.update { it.copy(errorMessage = friendly) }
+                }
+            _uiState.update { it.copy(commentSendingPostIds = it.commentSendingPostIds - postId) }
+        }
+    }
+
+    fun deleteComment(postId: String, commentId: String) {
+        val creds = deviceCreds(persistedData) ?: return
+        val previous = _uiState.value.postComments[postId] ?: return
+        val remaining = previous.filterNot { it.id == commentId }
+        _uiState.update {
+            it.copy(
+                postComments = it.postComments + (postId to remaining),
+                feedItems = it.feedItems.withCommentCount(postId, remaining.size)
+            )
+        }
+        viewModelScope.launch {
+            matchServerApi.deleteComment(creds, postId, commentId)
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            postComments = it.postComments + (postId to previous),
+                            feedItems = it.feedItems.withCommentCount(postId, previous.size),
+                            errorMessage = error.message ?: "Could not delete comment"
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun List<FeedItem>.withCommentCount(postId: String, count: Int): List<FeedItem> =
+        map { item -> if (item.postId == postId) item.copy(commentCount = count) else item }
+
     fun mediaAuthHeaders(): Pair<String?, String?> {
         val data = persistedData
         return data.deviceId to data.deviceSecret
@@ -739,21 +843,30 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     fun joinFromInviteLink(raw: String) {
         val parsed = com.archerypal.app.data.RemoteInviteLink.extractFromText(raw)
         if (parsed == null) {
-            _uiState.update { it.copy(errorMessage = "Could not read invite link") }
+            _uiState.update { it.copy(errorMessage = "Could not read that invite link or room code") }
             return
         }
-        joinRemoteMatch(parsed.first, parsed.second)
+        joinRemoteMatch(parsed.roomId, parsed.token)
     }
 
     fun buildRemoteInviteLink(): String? {
-        val state = _uiState.value
-        val roomId = state.remoteRoomId ?: return null
-        val token = state.remoteJoinToken ?: return null
-        return com.archerypal.app.data.RemoteInviteLink.build(
-            roomId = roomId,
-            joinToken = token,
-            hostName = state.playerName
-        )
+        val roomId = _uiState.value.remoteRoomId ?: return null
+        return com.archerypal.app.data.RemoteInviteLink.build(roomId)
+    }
+
+    /** Lightweight refresh for the Play tab: pending challenges plus the friend list to challenge from. */
+    fun refreshRemotePlayData() {
+        val creds = deviceCreds() ?: return
+        viewModelScope.launch {
+            matchServerApi.incomingChallenges(creds).onSuccess { response ->
+                _uiState.update { it.copy(incomingChallenges = response.challenges) }
+            }
+            if (_uiState.value.remoteFriends.isEmpty()) {
+                matchServerApi.listFriends(creds).onSuccess { response ->
+                    _uiState.update { it.copy(remoteFriends = response.friends) }
+                }
+            }
+        }
     }
 
     private fun syncPlusEntitlement(sku: String?, purchaseToken: String?) {
@@ -1472,7 +1585,22 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                         ?: response.wsUrl.substringAfter("token=", "").substringBefore('&').takeIf { it.isNotBlank() }
                         ?: response.joinToken
                     val cleanWs = response.wsUrl.substringBefore('?')
+                    val opponent = response.targetDisplayName?.takeIf { it.isNotBlank() }
+                        ?: _uiState.value.remoteFriends
+                            .firstOrNull { it.friendCode.equals(targetFriendCode.trim(), ignoreCase = true) }
+                            ?.displayName
                     startRemoteHostSession(name, response.roomId, cleanWs, hostToken, response.joinToken)
+                    _uiState.update {
+                        it.copy(
+                            remoteOpponentName = opponent,
+                            remoteOpponentNotified = response.targetNotified,
+                            statusMessage = when {
+                                opponent == null -> "Remote match — share the invite with your friend"
+                                response.targetNotified -> "Challenge sent — waiting for $opponent to join"
+                                else -> "Waiting for $opponent — share the invite so they can join"
+                            }
+                        )
+                    }
                 }
                 .onFailure { error ->
                     _uiState.update {
@@ -1482,13 +1610,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun joinRemoteMatch(roomId: String, joinToken: String) {
+    /** [joinToken] is only supplied by legacy links; otherwise it is fetched for the signed-in invitee. */
+    fun joinRemoteMatch(roomId: String, joinToken: String? = null) {
         // Joiners can accept invites without a Plus subscription.
         val name = _uiState.value.playerName
         if (name.isBlank()) {
             _uiState.update { it.copy(errorMessage = "Enter your name first") }
             return
         }
+        val room = roomId.trim()
         viewModelScope.launch {
             remoteIdentity.ensureRegistered(name).onFailure { error ->
                 _uiState.update { it.copy(errorMessage = error.message ?: "Server registration failed") }
@@ -1496,8 +1626,37 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             }.onSuccess { data ->
                 refreshAndSyncPushToken(data)
             }
-            val wsUrl = MatchServerConfig.roomWebSocketUrl(roomId.trim())
-            startRemoteJoinSession(name, roomId.trim(), wsUrl, joinToken.trim())
+            val legacyToken = joinToken?.trim()?.takeIf { it.isNotBlank() }
+            if (legacyToken != null) {
+                startRemoteJoinSession(name, room, MatchServerConfig.roomWebSocketUrl(room), legacyToken)
+                return@launch
+            }
+            val creds = deviceCreds() ?: run {
+                _uiState.update { it.copy(errorMessage = "Registering with server — try again in a moment") }
+                return@launch
+            }
+            matchServerApi.joinChallenge(creds, room)
+                .onSuccess { response ->
+                    _uiState.update { state ->
+                        state.copy(
+                            incomingChallenges = state.incomingChallenges.filterNot {
+                                it.roomId.equals(response.roomId, ignoreCase = true)
+                            }
+                        )
+                    }
+                    startRemoteJoinSession(
+                        name,
+                        response.roomId,
+                        response.wsUrl.substringBefore('?'),
+                        response.joinToken,
+                        hostName = response.hostDisplayName
+                    )
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(errorMessage = error.message ?: "Could not join that challenge")
+                    }
+                }
         }
     }
 
@@ -1528,7 +1687,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 hostName = name,
                 errorMessage = null,
                 connectionStatus = ConnectionStatus.Connecting,
-                statusMessage = "Remote match — share join token with your friend"
+                statusMessage = "Remote match — share the invite with your friend"
             )
         }
     }
@@ -1537,11 +1696,12 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         name: String,
         roomId: String,
         wsUrl: String,
-        joinToken: String
+        joinToken: String,
+        hostName: String? = null
     ) {
         val remote = RemoteMatchTransport(isHost = false, localName = name)
         bindTransport(remote)
-        remote.connect(wsUrl, joinToken, remoteHostName = "Host")
+        remote.connect(wsUrl, joinToken, remoteHostName = hostName?.takeIf { it.isNotBlank() } ?: "Host")
         _uiState.update {
             it.copy(
                 isHost = false,
@@ -1597,6 +1757,8 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 isRemoteMatch = false,
                 remoteRoomId = null,
                 remoteJoinToken = null,
+                remoteOpponentName = null,
+                remoteOpponentNotified = false,
                 matchId = matchId,
                 phase = MatchPhase.LOBBY,
                 targetCount = 0,
@@ -1889,6 +2051,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             plusPrice = billing.plusPrice,
             billingReady = billing.billingReady,
             remoteFriends = billing.remoteFriends,
+            incomingChallenges = billing.incomingChallenges,
             onlineGlobalLeaderboard = billing.onlineGlobalLeaderboard,
             onlineFriendsLeaderboard = billing.onlineFriendsLeaderboard,
             standingsMode = billing.standingsMode,

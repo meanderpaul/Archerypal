@@ -50,6 +50,8 @@ import com.archerypal.app.ui.components.BannerAdView
 import com.archerypal.app.ui.layout.SafeAreaScreen
 import com.archerypal.app.ui.navigation.MainShell
 import com.archerypal.app.ui.navigation.MainTab
+import com.archerypal.app.remote.FeedFilter
+import com.archerypal.app.ui.screens.social.PostCommentActions
 import com.archerypal.app.ui.screens.social.SocialScreen
 import com.archerypal.app.ui.screens.GuestLobbyScreen
 import com.archerypal.app.ui.screens.HistoryScreen
@@ -87,11 +89,17 @@ class MainActivity : ComponentActivity() {
         private set
     var pendingOpenFriends: Boolean = false
         private set
+    var pendingOpenFeed: Boolean = false
+        private set
     var inviteRevision by mutableIntStateOf(0)
         private set
 
     fun consumeOpenFriends() {
         pendingOpenFriends = false
+    }
+
+    fun consumeOpenFeed() {
+        pendingOpenFeed = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,6 +108,7 @@ class MainActivity : ComponentActivity() {
         pendingInviteLink = extractInviteFromIntent(intent)
         pendingProfileLink = extractProfileFromIntent(intent)
         pendingOpenFriends = isFriendRequestIntent(intent)
+        pendingOpenFeed = isPostCommentIntent(intent)
 
         setContent {
             ArcherypalTheme {
@@ -131,6 +140,7 @@ class MainActivity : ComponentActivity() {
         pendingInviteLink = extractInviteFromIntent(intent)
         pendingProfileLink = extractProfileFromIntent(intent)
         pendingOpenFriends = isFriendRequestIntent(intent)
+        pendingOpenFeed = isPostCommentIntent(intent)
         inviteRevision++
     }
 
@@ -138,6 +148,11 @@ class MainActivity : ComponentActivity() {
     private fun isFriendRequestIntent(intent: Intent?): Boolean =
         intent?.getBooleanExtra(InviteMessagingService.EXTRA_OPEN_FRIENDS, false) == true ||
             intent?.getStringExtra("type") == "friend_request"
+
+    private fun isPostCommentIntent(intent: Intent?): Boolean =
+        intent?.getBooleanExtra(InviteMessagingService.EXTRA_OPEN_FEED, false) == true ||
+            intent?.getStringExtra("type") == "post_comment" ||
+            intent?.getStringExtra("type") == InviteMessagingService.TYPE_FEED_POST
 
     private fun extractInviteFromIntent(intent: Intent?): String? {
         val data = intent?.data?.toString()
@@ -209,6 +224,12 @@ private fun ArcherypalApp(
             tabNavigationRequest = MainTab.Contest.route
             socialHubRequest = "FRIENDS"
             viewModel.refreshSocialData()
+        }
+        if (activity.pendingOpenFeed) {
+            activity.consumeOpenFeed()
+            tabNavigationRequest = MainTab.Contest.route
+            socialHubRequest = "FEED"
+            viewModel.setFeedFilter(FeedFilter.FRIEND_POSTS)
         }
         activity.pendingProfileLink?.let { link ->
             if (state.googleAccountLinked) {
@@ -426,6 +447,17 @@ private fun ArcherypalApp(
                             feedNewCounts = state.feedNewCounts,
                             feedLoading = state.feedLoading,
                             socialLoading = state.socialLoading,
+                            postComments = state.postComments,
+                            commentsLoadingPostIds = state.commentsLoadingPostIds,
+                            commentSendingPostIds = state.commentSendingPostIds,
+                            commentActions = remember(viewModel) {
+                                PostCommentActions(
+                                    onLoad = viewModel::loadComments,
+                                    onAdd = viewModel::addComment,
+                                    onDelete = viewModel::deleteComment,
+                                    onSubscribePlus = viewModel::openPaywall
+                                )
+                            },
                             myProfile = state.myProfile,
                             viewingFriendProfile = state.viewingFriendProfile,
                             deviceLocation = state.deviceLocation,
@@ -513,6 +545,8 @@ private fun ArcherypalApp(
                             serverReachable = state.serverReachable,
                             savedFriends = state.savedFriends,
                             remoteFriendCodes = remoteFriendCodes,
+                            remoteFriends = state.remoteFriends,
+                            incomingChallenges = state.incomingChallenges,
                             onHost = {
                                 viewModel.startHosting()
                                 navController.navigate("host")
@@ -534,6 +568,23 @@ private fun ArcherypalApp(
                                     navController.navigate("guest_lobby")
                                 }
                             },
+                            onJoinChallenge = { roomId ->
+                                requireGoogleAccount {
+                                    viewModel.joinRemoteMatch(roomId)
+                                    navController.navigate("guest_lobby")
+                                }
+                            },
+                            onChallengeFriend = { code ->
+                                requireGoogleAccount {
+                                    if (state.isPlusActive) {
+                                        viewModel.startRemoteChallenge(code)
+                                        navController.navigate("host")
+                                    } else {
+                                        viewModel.openPaywall()
+                                    }
+                                }
+                            },
+                            onRefreshRemote = viewModel::refreshRemotePlayData,
                             onRequestSignIn = { showGoogleSignInPrompt = true }
                         )
                     },
@@ -612,8 +663,9 @@ private fun ArcherypalApp(
                     statusMessage = state.statusMessage,
                     isRemoteMatch = state.isRemoteMatch,
                     remoteRoomId = state.remoteRoomId,
-                    remoteJoinToken = state.remoteJoinToken,
                     remoteInviteLink = viewModel.buildRemoteInviteLink(),
+                    remoteOpponentName = state.remoteOpponentName,
+                    remoteOpponentNotified = state.remoteOpponentNotified,
                     hostName = state.playerName,
                     onContinue = { navController.navigate("setup") },
                     onLeave = {

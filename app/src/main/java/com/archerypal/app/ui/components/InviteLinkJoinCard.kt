@@ -18,7 +18,7 @@ fun InviteLinkJoinCard(
     onJoin: (String) -> Unit,
     modifier: Modifier = Modifier,
     title: String = "Got an invite?",
-    hint: String = "Paste a challenge link from a friend",
+    hint: String = "Paste a challenge link or type the 8-character room code",
     buttonLabel: String = "Join match"
 ) {
     var inviteText by rememberSaveable { mutableStateOf("") }
@@ -34,7 +34,7 @@ fun InviteLinkJoinCard(
         OutlinedTextField(
             value = inviteText,
             onValueChange = { inviteText = it },
-            label = { Text("Link") },
+            label = { Text("Link or room code") },
             singleLine = false,
             maxLines = 3,
             modifier = Modifier.fillMaxWidth()

@@ -34,6 +34,19 @@ export async function listFriends(db: D1Database, self: string): Promise<Friend[
 	return results ?? [];
 }
 
+export async function listFriendPushTokens(db: D1Database, self: string): Promise<string[]> {
+	const { results } = await db
+		.prepare(
+			`SELECT p.fcm_token AS token
+       FROM friendships f
+       JOIN players p ON p.friend_code = CASE WHEN f.player_a = ? THEN f.player_b ELSE f.player_a END
+       WHERE (f.player_a = ? OR f.player_b = ?) AND p.fcm_token IS NOT NULL AND p.fcm_token != ''`,
+		)
+		.bind(self, self, self)
+		.all<{ token: string }>();
+	return (results ?? []).map((r) => r.token);
+}
+
 export async function addFriendship(
 	db: D1Database,
 	a: string,

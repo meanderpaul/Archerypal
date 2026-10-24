@@ -1,11 +1,32 @@
 import { Hono } from "hono";
 import { deviceAuth, type AppVariables } from "../middleware/deviceAuth";
 import { requirePlus } from "../middleware/plus";
-import { createPost } from "../db/posts";
+import {
+	createComment,
+	createPost,
+	deleteComment,
+	getVisiblePost,
+	listComments,
+} from "../db/posts";
+import { listFriendPushTokens } from "../db/friends";
+import { getPlayer } from "../db/players";
+import { sendPush } from "../push/fcm";
 import { textError } from "../util/http";
-import { latitudeOk, longitudeOk, postBodyOk, sanitizePostBody } from "../util/validate";
+import { allowRate } from "../util/rateLimit";
+import {
+	commentBodyOk,
+	latitudeOk,
+	longitudeOk,
+	postBodyOk,
+	sanitizePostBody,
+} from "../util/validate";
 
 export const postRoutes = new Hono<{ Bindings: Env; Variables: AppVariables }>();
+
+const COMMENTS_PER_HOUR = 60;
+const HOUR_MS = 60 * 60 * 1000;
+const POST_COMMENT_CHANNEL = "post_comments";
+const FEED_POST_CHANNEL = "feed_posts";
 
 function optionalNumber(raw: unknown): number | undefined {
 	if (raw == null || raw === "") return undefined;
@@ -103,5 +124,86 @@ postRoutes.post("/v1/posts", deviceAuth, async (c) => {
 		longitude,
 	});
 	if (!post) return textError(c, 500, "create post failed");
+
+	c.executionCtx.waitUntil(
+		listFriendPushTokens(c.env.DB, post.authorCode)
+			.then((tokens) =>
+				Promise.allSettled(
+					tokens.map((token) =>
+						sendPush(c.env, token, {
+							title: `${post.authorName} posted`,
+							body: post.body.length > 120 ? `${post.body.slice(0, 117)}...` : post.body,
+							channelId: FEED_POST_CHANNEL,
+							data: { type: "feed_post", postId: post.id },
+						}),
+					),
+				),
+			)
+			.then((results) => {
+				for (const r of results) {
+					if (r.status === "rejected") console.error("feed post push failed", r.reason);
+				}
+			})
+			.catch((err) => console.error("feed post push failed", err)),
+	);
 	return c.json({ post });
+});
+
+postRoutes.get("/v1/posts/:id/comments", deviceAuth, async (c) => {
+	const post = await getVisiblePost(c.env.DB, c.req.param("id"), c.get("friendCode"));
+	if (!post) return textError(c, 404, "not found");
+	const comments = await listComments(c.env.DB, post.id);
+	return c.json({ comments });
+});
+
+/** Reading comments is free; writing them is Plus, like posting. */
+postRoutes.post("/v1/posts/:id/comments", deviceAuth, async (c) => {
+	const denied = await requirePlus(c);
+	if (denied) return denied;
+	const self = c.get("friendCode");
+	const post = await getVisiblePost(c.env.DB, c.req.param("id"), self);
+	if (!post) return textError(c, 404, "not found");
+
+	let json: { body?: string };
+	try {
+		json = JSON.parse(new TextDecoder().decode(c.get("rawBody"))) as typeof json;
+	} catch {
+		return textError(c, 400, "invalid json");
+	}
+	const body = sanitizePostBody(json.body ?? "").trim();
+	if (!commentBodyOk(body)) return textError(c, 400, "comment must be 1-500 characters");
+	if (!allowRate(`post-comment:${self}`, COMMENTS_PER_HOUR, HOUR_MS)) {
+		return textError(c, 429, "too many comments — try again later");
+	}
+
+	const comment = await createComment(c.env.DB, post.id, self, body);
+	if (!comment) return textError(c, 500, "create comment failed");
+
+	if (post.authorCode !== self) {
+		c.executionCtx.waitUntil(
+			getPlayer(c.env.DB, post.authorCode)
+				.then((author) =>
+					sendPush(c.env, author?.fcmToken, {
+						title: `${comment.authorName} commented on your post`,
+						body: body.length > 120 ? `${body.slice(0, 117)}...` : body,
+						channelId: POST_COMMENT_CHANNEL,
+						data: { type: "post_comment", postId: post.id },
+					}),
+				)
+				.catch((err) => console.error("comment push failed", err)),
+		);
+	}
+	return c.json({ comment });
+});
+
+postRoutes.delete("/v1/posts/:id/comments/:commentId", deviceAuth, async (c) => {
+	const result = await deleteComment(
+		c.env.DB,
+		c.req.param("id"),
+		c.req.param("commentId"),
+		c.get("friendCode"),
+	);
+	if (result === "not_found") return textError(c, 404, "not found");
+	if (result === "forbidden") return textError(c, 403, "forbidden");
+	return c.json({ ok: true });
 });

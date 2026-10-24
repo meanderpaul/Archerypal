@@ -9,13 +9,27 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.archerypal.app.data.formatDistanceAway
 import com.archerypal.app.remote.FeedItem
+import com.archerypal.app.remote.RemoteComment
 import com.archerypal.app.remote.RemoteFriendRequest
 import com.archerypal.app.remote.RemoteShoot
 import com.archerypal.app.ui.components.AutoSizeText
@@ -36,6 +51,21 @@ import com.archerypal.app.ui.theme.ForestGreen
 import com.archerypal.app.ui.theme.SageMuted
 import com.archerypal.app.ui.theme.TargetGold
 
+/** Comment thread state for one post; [comments] is null until the thread has been fetched. */
+data class PostCommentsState(
+    val comments: List<RemoteComment>? = null,
+    val loading: Boolean = false,
+    val sending: Boolean = false,
+    val canComment: Boolean = false
+)
+
+class PostCommentActions(
+    val onLoad: (postId: String) -> Unit,
+    val onAdd: (postId: String, body: String) -> Unit,
+    val onDelete: (postId: String, commentId: String) -> Unit,
+    val onSubscribePlus: () -> Unit
+)
+
 @Composable
 fun FeedItemCard(
     item: FeedItem,
@@ -44,7 +74,10 @@ fun FeedItemCard(
     onAuthorClick: (String) -> Unit,
     onToggleShootRsvp: (RemoteShoot) -> Unit,
     onOpenShootDetail: (RemoteShoot) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    myFriendCode: String? = null,
+    commentsState: PostCommentsState = PostCommentsState(),
+    commentActions: PostCommentActions? = null
 ) {
     when (item.type) {
         "post" -> PostFeedCard(
@@ -52,6 +85,9 @@ fun FeedItemCard(
             deviceId = deviceId,
             deviceSecret = deviceSecret,
             onAuthorClick = onAuthorClick,
+            myFriendCode = myFriendCode,
+            commentsState = commentsState,
+            commentActions = commentActions,
             modifier = modifier
         )
         "shoot" -> ShootFeedCard(
@@ -137,9 +173,14 @@ private fun PostFeedCard(
     deviceId: String?,
     deviceSecret: String?,
     onAuthorClick: (String) -> Unit,
+    myFriendCode: String?,
+    commentsState: PostCommentsState,
+    commentActions: PostCommentActions?,
     modifier: Modifier = Modifier
 ) {
     val author = item.author ?: return
+    val postId = item.postId
+    var commentsExpanded by rememberSaveable(item.id) { mutableStateOf(false) }
     OutdoorCard(modifier = modifier) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -181,8 +222,219 @@ private fun PostFeedCard(
                 contentScale = ContentScale.Crop
             )
         }
+        if (postId != null && commentActions != null) {
+            CommentToggleRow(
+                count = commentsState.comments?.size ?: item.commentCount,
+                expanded = commentsExpanded,
+                onToggle = {
+                    commentsExpanded = !commentsExpanded
+                    if (commentsExpanded) commentActions.onLoad(postId)
+                }
+            )
+            if (commentsExpanded) {
+                CommentThread(
+                    postAuthorCode = author.friendCode,
+                    myFriendCode = myFriendCode,
+                    state = commentsState,
+                    onAuthorClick = onAuthorClick,
+                    onSend = { body -> commentActions.onAdd(postId, body) },
+                    onDelete = { commentId -> commentActions.onDelete(postId, commentId) },
+                    onSubscribePlus = commentActions.onSubscribePlus
+                )
+            }
+        }
     }
 }
+
+@Composable
+private fun CommentToggleRow(
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onToggle)
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Outlined.ChatBubbleOutline,
+            contentDescription = null,
+            tint = SageMuted,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            when {
+                count == 0 -> "Comment"
+                count == 1 -> "1 comment"
+                else -> "$count comments"
+            },
+            style = MaterialTheme.typography.labelLarge,
+            color = if (expanded) TargetGold else SageMuted
+        )
+    }
+}
+
+@Composable
+private fun CommentThread(
+    postAuthorCode: String,
+    myFriendCode: String?,
+    state: PostCommentsState,
+    onAuthorClick: (String) -> Unit,
+    onSend: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onSubscribePlus: () -> Unit
+) {
+    var draft by rememberSaveable { mutableStateOf("") }
+    val comments = state.comments
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+        when {
+            comments == null && state.loading -> CircularProgressIndicator(
+                strokeWidth = 2.dp,
+                modifier = Modifier
+                    .size(20.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+            comments.isNullOrEmpty() -> Text(
+                "No comments yet. Start the conversation.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            else -> comments.orEmpty().forEach { comment ->
+                val canDelete = myFriendCode != null &&
+                    (comment.authorCode == myFriendCode || postAuthorCode == myFriendCode)
+                CommentRow(
+                    comment = comment,
+                    canDelete = canDelete,
+                    onAuthorClick = onAuthorClick,
+                    onDelete = { onDelete(comment.id) }
+                )
+            }
+        }
+        if (!state.canComment) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onSubscribePlus)
+                    .padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Commenting is part of Plus",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "See Plus",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = TargetGold
+                )
+            }
+            return@Column
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { if (it.length <= MAX_COMMENT_CHARS) draft = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Add a comment…") },
+                textStyle = MaterialTheme.typography.bodyMedium,
+                maxLines = 4,
+                shape = RoundedCornerShape(20.dp)
+            )
+            IconButton(
+                onClick = {
+                    onSend(draft.trim())
+                    draft = ""
+                },
+                enabled = draft.isNotBlank() && !state.sending
+            ) {
+                if (state.sending) {
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                } else {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.Send,
+                        contentDescription = "Send comment",
+                        tint = if (draft.isNotBlank()) FieldGreen else SageMuted
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentRow(
+    comment: RemoteComment,
+    canDelete: Boolean,
+    onAuthorClick: (String) -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        AvatarCircle(
+            comment.authorName,
+            size = 26.dp,
+            modifier = Modifier.clickable { onAuthorClick(comment.authorCode) }
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    comment.authorName,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .clickable { onAuthorClick(comment.authorCode) }
+                )
+                Text(
+                    formatRelativeTime(comment.createdAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(comment.body, style = MaterialTheme.typography.bodyMedium)
+        }
+        if (canDelete) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Outlined.Delete,
+                    contentDescription = "Delete comment",
+                    tint = SageMuted,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+private const val MAX_COMMENT_CHARS = 500
 
 @Composable
 fun ShootFeedCard(

@@ -114,6 +114,15 @@ class MatchServerApi(
 
 
 
+    suspend fun incomingChallenges(creds: DeviceCredentials): Result<IncomingChallengesResponse> =
+        getJson(path = "/v1/matches/incoming", creds = creds)
+
+    /** Exchanges a short room code for this player's join token; only the challenged friend succeeds. */
+    suspend fun joinChallenge(creds: DeviceCredentials, roomId: String): Result<ChallengeJoinResponse> {
+        val code = URLEncoder.encode(roomId.trim(), Charsets.UTF_8.name())
+        return getJson(path = "/v1/matches/$code/join", creds = creds)
+    }
+
     suspend fun completeMatch(creds: DeviceCredentials, roomId: String,
 
         body: CompleteMatchRequest
@@ -456,6 +465,26 @@ class MatchServerApi(
             }
         }
     }
+
+    suspend fun listComments(creds: DeviceCredentials, postId: String
+    ): Result<CommentsResponse> = getJson(
+        path = "/v1/posts/$postId/comments",
+        creds = creds
+    )
+
+    suspend fun createComment(creds: DeviceCredentials, postId: String, body: String
+    ): Result<CommentResponse> = postJson(
+        path = "/v1/posts/$postId/comments",
+        body = CreateCommentRequest(body),
+        authenticated = true,
+        creds = creds
+    )
+
+    suspend fun deleteComment(creds: DeviceCredentials, postId: String, commentId: String
+    ): Result<OkResponse> = deleteJson(
+        path = "/v1/posts/$postId/comments/$commentId",
+        creds = creds
+    )
 
     suspend fun bindDeviceId(friendCode: String, deviceSecret: String): Result<DeviceBindResponse> = apiResult {
         withContext(Dispatchers.IO) {

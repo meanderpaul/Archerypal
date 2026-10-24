@@ -10,18 +10,22 @@ object RemoteInviteLink {
 
     private val HTTPS_PREFIX = "https://${LinkConfig.PUBLIC_HOST}${LinkConfig.INVITE_PATH}"
     private val CUSTOM_PREFIX = "$SCHEME://$HOST"
+    private val ROOM_CODE = Regex("^[A-HJ-NP-Z2-9]{8}$")
 
-    fun build(roomId: String, joinToken: String, hostName: String? = null): String {
-        // hostName ignored: display names stay out of shareable invite URIs.
-        return HTTPS_PREFIX + encode(roomId) + "?token=" + encode(joinToken)
-    }
+    /** [token] is only present on legacy links; new invites are redeemed via the server. */
+    data class Invite(val roomId: String, val token: String? = null)
 
-    fun parse(raw: String): Pair<String, String>? {
+    fun build(roomId: String): String = HTTPS_PREFIX + encode(roomId)
+
+    fun isRoomCode(value: String): Boolean = ROOM_CODE.matches(value.trim().uppercase())
+
+    fun parse(raw: String): Invite? {
         val trimmed = raw.trim().substringBefore(' ').substringBefore('\n')
         return parseHttps(trimmed) ?: parseCustom(trimmed)
     }
 
-    fun extractFromText(text: String): Pair<String, String>? {
+    /** Accepts a pasted message containing a link, a bare link, or just the 8-character room code. */
+    fun extractFromText(text: String): Invite? {
         parse(text)?.let { return it }
         for (marker in listOf(HTTPS_PREFIX, CUSTOM_PREFIX)) {
             val start = text.indexOf(marker, ignoreCase = true)
@@ -30,21 +34,23 @@ object RemoteInviteLink {
             val link = if (end < 0) text.substring(start) else text.substring(start, end)
             parse(link)?.let { return it }
         }
+        val bare = text.trim().replace("-", "").replace(" ", "")
+        if (isRoomCode(bare)) return Invite(bare.uppercase())
         return null
     }
 
-    private fun parseHttps(link: String): Pair<String, String>? {
+    private fun parseHttps(link: String): Invite? {
         if (!link.startsWith(HTTPS_PREFIX, ignoreCase = true)) return null
         val rest = link.substring(HTTPS_PREFIX.length)
         val roomId = decode(rest.substringBefore('?').substringBefore('/')).trim()
         val token = queryParams(rest.substringAfter('?', missingDelimiterValue = ""))["token"]
             ?.trim()
-            .orEmpty()
-        if (roomId.isBlank() || token.isBlank()) return null
-        return roomId to token
+            ?.takeIf { it.isNotBlank() }
+        if (roomId.isBlank()) return null
+        return Invite(roomId, token)
     }
 
-    private fun parseCustom(link: String): Pair<String, String>? {
+    private fun parseCustom(link: String): Invite? {
         val schemeSep = link.indexOf("://")
         if (schemeSep <= 0) return null
         val scheme = link.substring(0, schemeSep)
@@ -54,9 +60,9 @@ object RemoteInviteLink {
         if (!hostPart.equals(HOST, ignoreCase = true)) return null
         val params = queryParams(pathAndQuery.substringAfter('?', missingDelimiterValue = ""))
         val roomId = params["roomId"]?.trim().orEmpty()
-        val token = params["token"]?.trim().orEmpty()
-        if (roomId.isBlank() || token.isBlank()) return null
-        return roomId to token
+        val token = params["token"]?.trim()?.takeIf { it.isNotBlank() }
+        if (roomId.isBlank()) return null
+        return Invite(roomId, token)
     }
 
     private fun queryParams(query: String): Map<String, String> {

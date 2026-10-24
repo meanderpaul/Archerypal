@@ -8,6 +8,16 @@ export type Post = {
 	createdAt: number;
 	latitude?: number;
 	longitude?: number;
+	commentCount: number;
+};
+
+export type PostComment = {
+	id: string;
+	postId: string;
+	authorCode: string;
+	authorName: string;
+	body: string;
+	createdAt: number;
 };
 
 export type CreatePostInput = {
@@ -36,10 +46,12 @@ type PostRow = {
 	created_at: number;
 	latitude: number | null;
 	longitude: number | null;
+	comment_count: number;
 };
 
 const POST_COLS = `p.id, p.author_code, pl.display_name, p.body,
-        p.image_key, p.is_public, p.created_at, p.latitude, p.longitude`;
+        p.image_key, p.is_public, p.created_at, p.latitude, p.longitude,
+        (SELECT COUNT(*) FROM post_comments pc WHERE pc.post_id = p.id) AS comment_count`;
 
 const FRIEND_OR_SELF = `(
            p.author_code = ?
@@ -50,7 +62,7 @@ const FRIEND_OR_SELF = `(
            )
          )`;
 
-function newPostId(): string {
+function newId(): string {
 	const bytes = crypto.getRandomValues(new Uint8Array(16));
 	return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -64,6 +76,7 @@ function rowToPost(row: PostRow): Post {
 		imageKey: row.image_key ?? "",
 		isPublic: row.is_public === 1,
 		createdAt: row.created_at,
+		commentCount: row.comment_count ?? 0,
 	};
 	if (row.latitude != null) post.latitude = row.latitude;
 	if (row.longitude != null) post.longitude = row.longitude;
@@ -77,7 +90,7 @@ function coarseDegrees(deg: number | undefined): number | null {
 }
 
 export async function createPost(db: D1Database, in_: CreatePostInput): Promise<Post | null> {
-	const id = newPostId();
+	const id = newId();
 	const createdAt = Date.now();
 	// Only public posts surface regionally; private posts never keep a location.
 	const located = in_.isPublic && in_.latitude != null && in_.longitude != null;
@@ -152,4 +165,100 @@ export async function listVisiblePosts(
 		.bind(sinceMs, sinceMs, ...binds, limit)
 		.all<PostRow>();
 	return (rows.results ?? []).map(rowToPost);
+}
+
+/** Same visibility rule as the feed: public, or authored by the viewer or a friend. */
+export async function getVisiblePost(
+	db: D1Database,
+	id: string,
+	viewerCode: string,
+): Promise<Post | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${POST_COLS}
+       FROM posts p
+       JOIN players pl ON pl.friend_code = p.author_code
+       WHERE p.id = ?
+         AND (p.is_public = 1 OR ${FRIEND_OR_SELF})`,
+		)
+		.bind(id, viewerCode, viewerCode, viewerCode)
+		.first<PostRow>();
+	return row ? rowToPost(row) : null;
+}
+
+type CommentRow = {
+	id: string;
+	post_id: string;
+	author_code: string;
+	display_name: string;
+	body: string;
+	created_at: number;
+};
+
+function rowToComment(row: CommentRow): PostComment {
+	return {
+		id: row.id,
+		postId: row.post_id,
+		authorCode: row.author_code,
+		authorName: row.display_name,
+		body: row.body,
+		createdAt: row.created_at,
+	};
+}
+
+const COMMENT_SELECT = `SELECT c.id, c.post_id, c.author_code, pl.display_name, c.body, c.created_at
+       FROM post_comments c
+       JOIN players pl ON pl.friend_code = c.author_code`;
+
+/** Oldest first so threads read top to bottom. */
+export async function listComments(
+	db: D1Database,
+	postId: string,
+	limit = 200,
+): Promise<PostComment[]> {
+	const rows = await db
+		.prepare(`${COMMENT_SELECT} WHERE c.post_id = ? ORDER BY c.created_at ASC LIMIT ?`)
+		.bind(postId, limit)
+		.all<CommentRow>();
+	return (rows.results ?? []).map(rowToComment);
+}
+
+export async function createComment(
+	db: D1Database,
+	postId: string,
+	authorCode: string,
+	body: string,
+): Promise<PostComment | null> {
+	const id = newId();
+	await db
+		.prepare(
+			`INSERT INTO post_comments (id, post_id, author_code, body, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+		)
+		.bind(id, postId, authorCode, body, Date.now())
+		.run();
+	const row = await db.prepare(`${COMMENT_SELECT} WHERE c.id = ?`).bind(id).first<CommentRow>();
+	return row ? rowToComment(row) : null;
+}
+
+/** Comment authors and the post's author may delete a comment. */
+export async function deleteComment(
+	db: D1Database,
+	postId: string,
+	commentId: string,
+	viewerCode: string,
+): Promise<"ok" | "not_found" | "forbidden"> {
+	const row = await db
+		.prepare(
+			`SELECT c.author_code, p.author_code AS post_author
+       FROM post_comments c
+       JOIN posts p ON p.id = c.post_id
+       WHERE c.id = ? AND c.post_id = ?`,
+		)
+		.bind(commentId, postId)
+		.first<{ author_code: string; post_author: string }>();
+	if (!row) return "not_found";
+	if (row.author_code !== viewerCode && row.post_author !== viewerCode) return "forbidden";
+	await db.prepare(`DELETE FROM post_comments WHERE id = ?`).bind(commentId).run();
+	return "ok";
 }

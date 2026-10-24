@@ -1,7 +1,9 @@
 package com.archerypal.app.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
-import androidx.compose.foundation.clickable
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,13 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.archerypal.app.data.AppConstants
@@ -36,8 +35,9 @@ fun HostScreen(
     statusMessage: String,
     isRemoteMatch: Boolean = false,
     remoteRoomId: String? = null,
-    remoteJoinToken: String? = null,
     remoteInviteLink: String? = null,
+    remoteOpponentName: String? = null,
+    remoteOpponentNotified: Boolean = false,
     hostName: String = "",
     onContinue: () -> Unit,
     onLeave: () -> Unit
@@ -45,7 +45,32 @@ fun HostScreen(
     val joinerCount = players.count { !it.isHost }
     val hostPlayer = players.firstOrNull { it.isHost }
     val context = LocalContext.current
-    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+    val onShare: (String) -> Unit = { message ->
+        val share = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, message)
+        }
+        context.startActivity(Intent.createChooser(share, "Share invite"))
+    }
+    val onCopy: (String) -> Unit = { link ->
+        context.getSystemService(ClipboardManager::class.java)
+            ?.setPrimaryClip(ClipData.newPlainText("Archerypal invite", link))
+        Toast.makeText(context, "Invite link copied", Toast.LENGTH_SHORT).show()
+    }
+    val shareCard: @Composable (Dp) -> Unit = { qrCodeSize ->
+        HostShareOrQr(
+            isRemoteMatch = isRemoteMatch,
+            remoteInviteLink = remoteInviteLink,
+            remoteRoomId = remoteRoomId,
+            opponentName = remoteOpponentName,
+            opponentNotified = remoteOpponentNotified,
+            hostName = hostName,
+            qrContent = qrContent,
+            qrCodeSize = qrCodeSize,
+            onShare = onShare,
+            onCopy = onCopy
+        )
+    }
 
     AdaptiveScreenColumn(
         scroll = true,
@@ -63,24 +88,7 @@ fun HostScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing)
                 ) {
-                    HostShareOrQr(
-                        isRemoteMatch = isRemoteMatch,
-                        remoteInviteLink = remoteInviteLink,
-                        remoteRoomId = remoteRoomId,
-                        remoteJoinToken = remoteJoinToken,
-                        hostName = hostName,
-                        qrContent = qrContent,
-                        qrCodeSize = metrics.qrCodeSize,
-                        showAdvanced = showAdvanced,
-                        onToggleAdvanced = { showAdvanced = !showAdvanced },
-                        onShare = { message ->
-                            val share = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, message)
-                            }
-                            context.startActivity(Intent.createChooser(share, "Share invite"))
-                        }
-                    )
+                    shareCard(metrics.qrCodeSize)
                 }
                 Column(
                     modifier = Modifier.weight(1f),
@@ -103,24 +111,7 @@ fun HostScreen(
                 connectedCount = connectedCount
             )
             HostLobbyCard(hostPlayer = hostPlayer, joinerCount = joinerCount, players = players)
-            HostShareOrQr(
-                isRemoteMatch = isRemoteMatch,
-                remoteInviteLink = remoteInviteLink,
-                remoteRoomId = remoteRoomId,
-                remoteJoinToken = remoteJoinToken,
-                hostName = hostName,
-                qrContent = qrContent,
-                qrCodeSize = metrics.qrCodeSize,
-                showAdvanced = showAdvanced,
-                onToggleAdvanced = { showAdvanced = !showAdvanced },
-                onShare = { message ->
-                    val share = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, message)
-                    }
-                    context.startActivity(Intent.createChooser(share, "Share invite"))
-                }
-            )
+            shareCard(metrics.qrCodeSize)
         }
 
         PrimaryActionButton("Set up targets", onContinue)
@@ -208,59 +199,62 @@ private fun HostShareOrQr(
     isRemoteMatch: Boolean,
     remoteInviteLink: String?,
     remoteRoomId: String?,
-    remoteJoinToken: String?,
+    opponentName: String?,
+    opponentNotified: Boolean,
     hostName: String,
     qrContent: String,
     qrCodeSize: Dp,
-    showAdvanced: Boolean,
-    onToggleAdvanced: () -> Unit,
-    onShare: (String) -> Unit
+    onShare: (String) -> Unit,
+    onCopy: (String) -> Unit
 ) {
     if (isRemoteMatch && !remoteInviteLink.isNullOrBlank()) {
         OutdoorCard(modifier = Modifier.fillMaxWidth()) {
-            Text("Share invite", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Send this link — your friend taps to join in Archerypal",
+                if (opponentName != null) "Challenge $opponentName" else "Share invite",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                when {
+                    opponentName != null && opponentNotified ->
+                        "$opponentName got a notification and will see this challenge on their Play tab. " +
+                            "You can also send the link yourself."
+                    opponentName != null ->
+                        "$opponentName will see this challenge on their Play tab. Send the link to give them a nudge."
+                    else -> "Send this link — your friend taps to join in Archerypal"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
             )
-            PrimaryActionButton(
-                text = "Share invite link",
-                onClick = {
-                    val message = buildString {
-                        append(hostName.ifBlank { "Your friend" })
-                        append(" challenged you to an Archerypal match!\n")
-                        append(remoteInviteLink)
-                    }
-                    onShare(message)
-                }
-            )
+            if (!remoteRoomId.isNullOrBlank()) {
+                Text("Room code", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    remoteRoomId,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PrimaryActionButton(
+                    text = "Share link",
+                    onClick = {
+                        onShare("${hostName.ifBlank { "Your friend" }} challenged you to an Archerypal match! $remoteInviteLink")
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                SecondaryActionButton(
+                    text = "Copy link",
+                    onClick = { onCopy(remoteInviteLink) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Text(
                 remoteInviteLink,
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                 modifier = Modifier.padding(top = 8.dp)
             )
-            Text(
-                if (showAdvanced) "Hide manual join details" else "Show manual join details",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(top = 12.dp)
-                    .clickable(onClick = onToggleAdvanced)
-            )
-            if (showAdvanced && !remoteRoomId.isNullOrBlank() && !remoteJoinToken.isNullOrBlank()) {
-                Text(
-                    "Room ID: $remoteRoomId",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-                Text(
-                    "Join token: $remoteJoinToken",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
         }
     } else if (!isRemoteMatch) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {

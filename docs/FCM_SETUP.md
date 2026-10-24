@@ -17,7 +17,8 @@ configuration.
 
 ## Server credentials (Cloudflare Worker)
 
-The Worker sends friend-request pushes via FCM HTTP v1. Store the Firebase
+The Worker sends pushes via FCM HTTP v1 for match challenges, friend requests,
+comments on your posts, and new posts from friends. Store the Firebase
 service-account JSON as a secret:
 
 ```powershell
@@ -25,9 +26,9 @@ cd workers
 Get-Content path\to\firebase-service-account.json -Raw | npx wrangler secret put FCM_SERVICE_ACCOUNT_JSON
 ```
 
-When the secret is unset, sends are skipped and friend requests still work
-(they appear the next time the recipient opens Social). Android shows them on
-the `friend_requests` channel and tapping opens Social → Friends.
+When the secret is unset, sends are skipped; everything still appears the next
+time the recipient opens the app. Android channels: `remote_invites`,
+`friend_requests`, `post_comments`, and `feed_posts`.
 
 ## Server credentials (legacy Go server)
 

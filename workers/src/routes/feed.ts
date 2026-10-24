@@ -24,6 +24,7 @@ type FeedItem = {
 	author?: FeedAuthor;
 	body?: string;
 	imageKey?: string;
+	commentCount?: number;
 	shoot?: Shoot;
 };
 
@@ -59,6 +60,7 @@ function postToFeedItem(post: Post): FeedItem {
 		},
 		body: post.body,
 		imageKey: post.imageKey,
+		commentCount: post.commentCount,
 	};
 }
 

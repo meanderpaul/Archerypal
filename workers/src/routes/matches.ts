@@ -5,20 +5,27 @@ import { issueRoomToken, parseRoomToken } from "../auth/jwt";
 import { getPlayer } from "../db/players";
 import {
 	applyMatchStats,
+	closeOpenRoomsBetween,
 	closeRoom,
 	createRoom,
 	getRoom,
 	insertCompletedMatch,
+	listIncomingChallenges,
 	type CompletePlayer,
 } from "../db/rooms";
+import { sendPush } from "../push/fcm";
 import { isFriendCode } from "../util/validate";
 import { nowSec, textError } from "../util/http";
-import { randomHex } from "../util/crypto";
+import { generateRoomCode } from "../util/crypto";
 import { allowRate } from "../util/rateLimit";
 
 export const matchRoutes = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
 const ROOM_TOKEN_TTL_SEC = 15 * 60;
+/** How long an unanswered challenge stays joinable. */
+const CHALLENGE_TTL_SEC = 30 * 60;
+const MAX_CHALLENGES_PER_HOST_PER_HOUR = 30;
+const REMOTE_INVITE_CHANNEL = "remote_invites";
 /** Reject instant fabricate-and-complete leaderboard spam. */
 const MIN_ROOM_AGE_SEC = 30;
 /** Soft cap per-player score to limit leaderboard inflation. */
@@ -49,11 +56,16 @@ matchRoutes.post("/v1/matches/challenge", deviceAuth, async (c) => {
 	if (!isFriendCode(target) || target === host) {
 		return textError(c, 400, "targetFriendCode required");
 	}
-	if (!(await getPlayer(c.env.DB, target))) return textError(c, 404, "target not found");
+	if (!allowRate(`challenge:${host}`, MAX_CHALLENGES_PER_HOST_PER_HOUR, 60 * 60 * 1000)) {
+		return textError(c, 429, "too many challenges");
+	}
+	const targetPlayer = await getPlayer(c.env.DB, target);
+	if (!targetPlayer) return textError(c, 404, "target not found");
 
-	const roomId = randomHex(16);
+	const roomId = generateRoomCode();
 	const now = nowSec();
-	await createRoom(c.env.DB, roomId, host, target, now, now + ROOM_TOKEN_TTL_SEC * 2);
+	await closeOpenRoomsBetween(c.env.DB, host, target);
+	await createRoom(c.env.DB, roomId, host, target, now, now + CHALLENGE_TTL_SEC);
 
 	const hostToken = await issueRoomToken(c.env.JWT_SECRET, roomId, host, true, ROOM_TOKEN_TTL_SEC);
 	const joinToken = await issueRoomToken(
@@ -64,12 +76,20 @@ matchRoutes.post("/v1/matches/challenge", deviceAuth, async (c) => {
 		ROOM_TOKEN_TTL_SEC,
 	);
 
-	// Invite carries join JWT only (short TTL). Host display name is not put in the URI.
-	const inviteUri = `archerypal://remote?roomId=${roomId}&token=${joinToken}`;
+	// Invites carry only the room id; the invitee fetches its join token via /v1/matches/:roomId/join.
+	const inviteUri = `archerypal://remote?roomId=${roomId}`;
+	const inviteUrl = `${new URL(c.req.url).origin}/r/${roomId}`;
 
-	const targetPlayer = await getPlayer(c.env.DB, target);
-	const targetFcm = targetPlayer?.fcmToken ? "present" : "";
-	// FCM send deferred to later phase
+	const hostPlayer = await getPlayer(c.env.DB, host);
+	const hostName = hostPlayer?.displayName ?? host;
+	c.executionCtx.waitUntil(
+		sendPush(c.env, targetPlayer.fcmToken, {
+			title: "Match challenge",
+			body: `${hostName} challenged you to an Archerypal match — tap to join`,
+			channelId: REMOTE_INVITE_CHANNEL,
+			data: { type: "remote_invite", inviteUri, roomId, hostDisplayName: hostName },
+		}).catch((err) => console.error("challenge push failed", err)),
+	);
 
 	// Token is sent on the WebSocket upgrade via Authorization, not the query string.
 	const wsUrl = `${publicWsBase(c.env, c.req.url)}/v1/room/${roomId}`;
@@ -79,7 +99,34 @@ matchRoutes.post("/v1/matches/challenge", deviceAuth, async (c) => {
 		hostToken,
 		joinToken,
 		inviteUri,
-		targetFcm,
+		inviteUrl,
+		targetDisplayName: targetPlayer.displayName,
+		targetNotified: Boolean(targetPlayer.fcmToken),
+	});
+});
+
+matchRoutes.get("/v1/matches/incoming", deviceAuth, async (c) => {
+	const challenges = await listIncomingChallenges(c.env.DB, c.get("friendCode"), nowSec());
+	return c.json({ challenges });
+});
+
+matchRoutes.get("/v1/matches/:roomId/join", deviceAuth, async (c) => {
+	if (!c.env.JWT_SECRET) return textError(c, 503, "JWT_SECRET not configured");
+	const roomId = c.req.param("roomId").trim().toUpperCase();
+	const self = c.get("friendCode");
+	const room = await getRoom(c.env.DB, roomId);
+	// Same response for "missing" and "not yours" so room codes can't be probed.
+	if (!room || room.joinerFriendCode !== self) return textError(c, 404, "challenge not found");
+	if (room.status !== "open" || room.expiresAt <= nowSec()) {
+		return textError(c, 410, "challenge expired — ask your friend to send a new one");
+	}
+	const joinToken = await issueRoomToken(c.env.JWT_SECRET, roomId, self, false, ROOM_TOKEN_TTL_SEC);
+	const host = await getPlayer(c.env.DB, room.hostFriendCode);
+	return c.json({
+		roomId,
+		wsUrl: `${publicWsBase(c.env, c.req.url)}/v1/room/${roomId}`,
+		joinToken,
+		hostDisplayName: host?.displayName ?? room.hostFriendCode,
 	});
 });
 

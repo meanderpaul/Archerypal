@@ -72,7 +72,32 @@ data class ChallengeResponse(
     val wsUrl: String,
     val joinToken: String,
     /** Host room JWT; preferred over embedding the token in [wsUrl]. */
-    val hostToken: String? = null
+    val hostToken: String? = null,
+    val targetDisplayName: String? = null,
+    /** True when the invitee has a push token, so they were sent a notification. */
+    val targetNotified: Boolean = false
+)
+
+@Serializable
+data class IncomingChallenge(
+    val roomId: String,
+    val hostFriendCode: String,
+    val hostDisplayName: String,
+    val createdAt: Long = 0,
+    val expiresAt: Long = 0
+)
+
+@Serializable
+data class IncomingChallengesResponse(
+    val challenges: List<IncomingChallenge> = emptyList()
+)
+
+@Serializable
+data class ChallengeJoinResponse(
+    val roomId: String,
+    val wsUrl: String,
+    val joinToken: String,
+    val hostDisplayName: String? = null
 )
 
 @Serializable
@@ -316,8 +341,13 @@ data class FeedItem(
     val author: FeedAuthor? = null,
     val body: String = "",
     val imageKey: String = "",
+    val commentCount: Int = 0,
     val shoot: RemoteShoot? = null
-)
+) {
+    /** Feed ids are prefixed ("post-<id>"); comment endpoints take the bare post id. */
+    val postId: String?
+        get() = if (type == "post") id.removePrefix("post-") else null
+}
 
 @Serializable
 data class FeedResponse(
@@ -365,4 +395,29 @@ data class RemotePost(
 @Serializable
 data class PostResponse(
     val post: RemotePost
+)
+
+@Serializable
+data class RemoteComment(
+    val id: String,
+    val postId: String,
+    val authorCode: String,
+    val authorName: String,
+    val body: String,
+    val createdAt: Long = 0
+)
+
+@Serializable
+data class CommentsResponse(
+    val comments: List<RemoteComment> = emptyList()
+)
+
+@Serializable
+data class CommentResponse(
+    val comment: RemoteComment
+)
+
+@Serializable
+data class CreateCommentRequest(
+    val body: String
 )

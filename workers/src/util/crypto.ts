@@ -50,13 +50,23 @@ export function randomHex(byteLen: number): string {
 	return bytesToHex(b);
 }
 
-export function generateFriendCode(): string {
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-	const b = new Uint8Array(6);
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function randomCode(length: number): string {
+	const b = new Uint8Array(length);
 	crypto.getRandomValues(b);
-	let code = "AP-";
-	for (let i = 0; i < 6; i++) code += alphabet[b[i]! % alphabet.length];
+	let code = "";
+	for (let i = 0; i < length; i++) code += CODE_ALPHABET[b[i]! % CODE_ALPHABET.length];
 	return code;
+}
+
+export function generateFriendCode(): string {
+	return "AP-" + randomCode(6);
+}
+
+/** Short shareable room id (40 bits). Joining still requires the invitee's device auth. */
+export function generateRoomCode(): string {
+	return randomCode(8);
 }
 
 /** Mask for API responses — never return full emails to clients or logs. */

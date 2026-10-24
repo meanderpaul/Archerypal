@@ -58,12 +58,13 @@ linkRoutes.get("/f/:code", (c) => {
 linkRoutes.get("/r/:roomId", (c) => {
 	const roomId = c.req.param("roomId");
 	const token = c.req.query("token") ?? "";
-	if (!ROOM_PARAM.test(roomId) || !ROOM_PARAM.test(token)) return c.text("not found", 404);
+	if (!ROOM_PARAM.test(roomId) || (token && !ROOM_PARAM.test(token))) return c.text("not found", 404);
+	const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
 	return c.html(
 		landingPage({
 			title: "Join an Archerypal match",
-			body: "You've been invited to a remote archery match. Open the app to join the lobby.",
-			appUri: `archerypal://remote?roomId=${encodeURIComponent(roomId)}&token=${encodeURIComponent(token)}`,
+			body: `You've been challenged to a remote archery match (room <strong>${escapeHtml(roomId)}</strong>). Open the app to join the lobby.`,
+			appUri: `archerypal://remote?roomId=${encodeURIComponent(roomId)}${tokenParam}`,
 			referrer: "invite=match",
 		}),
 	);

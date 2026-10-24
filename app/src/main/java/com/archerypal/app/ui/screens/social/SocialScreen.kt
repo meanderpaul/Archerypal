@@ -60,6 +60,7 @@ import com.archerypal.app.remote.FeedItem
 import com.archerypal.app.remote.MutualFriendSuggestion
 import com.archerypal.app.remote.PlayerProfile
 import com.archerypal.app.remote.PlayerSearchResult
+import com.archerypal.app.remote.RemoteComment
 import com.archerypal.app.remote.RemoteFriend
 import com.archerypal.app.remote.RemoteFriendRequest
 import com.archerypal.app.remote.RemoteShoot
@@ -93,6 +94,10 @@ fun SocialScreen(
     feedNewCounts: Map<FeedFilter, Int>,
     feedLoading: Boolean,
     socialLoading: Boolean,
+    postComments: Map<String, List<RemoteComment>>,
+    commentsLoadingPostIds: Set<String>,
+    commentSendingPostIds: Set<String>,
+    commentActions: PostCommentActions,
     myProfile: PlayerProfile?,
     viewingFriendProfile: PlayerProfile?,
     deviceLocation: GeoPoint?,
@@ -354,13 +359,22 @@ fun SocialScreen(
                             }
                         } else {
                             items(posts, key = { it.id }) { item ->
+                                val postId = item.postId
                                 FeedItemCard(
                                     item = item,
                                     deviceId = deviceId,
                                     deviceSecret = deviceSecret,
                                     onAuthorClick = onLoadFriendProfile,
                                     onToggleShootRsvp = {},
-                                    onOpenShootDetail = {}
+                                    onOpenShootDetail = {},
+                                    myFriendCode = friendCode,
+                                    commentsState = PostCommentsState(
+                                        comments = postId?.let { postComments[it] },
+                                        loading = postId in commentsLoadingPostIds,
+                                        sending = postId in commentSendingPostIds,
+                                        canComment = isPlusActive
+                                    ),
+                                    commentActions = commentActions
                                 )
                             }
                         }

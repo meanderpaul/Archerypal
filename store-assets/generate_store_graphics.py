@@ -141,97 +141,75 @@ def draw_step_card(
 
 
 def create_infographic(icon: Image.Image) -> Image.Image:
-    w, h = 1080, 1620
+    w, h = 1080, 1272
     img = vertical_gradient((w, h), FOREST, DEEP)
     draw = ImageDraw.Draw(img)
 
     # Header band
-    draw.rounded_rectangle((40, 40, w - 40, 300), radius=28, fill=CARD, outline=FIELD, width=2)
-    paste_icon(img, icon, (56, 56, 250, 250))
+    draw.rounded_rectangle((40, 40, w - 40, 280), radius=28, fill=CARD, outline=FIELD, width=2)
+    paste_icon(img, icon, (60, 60, 260, 260))
 
-    title_font = load_font(FONT_BOLD, 58)
-    sub_font = load_font(FONT_REG, 26)
+    title_font = load_font(FONT_BOLD, 62)
+    sub_font = load_font(FONT_REG, 30)
     section_font = load_font(FONT_BOLD, 34)
     footer_font = load_font(FONT_REG, 22)
 
-    draw.text((270, 88), "Archerypal", font=title_font, fill=TEXT)
-    draw.text((270, 162), "What is it?", font=section_font, fill=GOLD)
+    draw.text((290, 86), "Archerypal", font=title_font, fill=TEXT)
     draw.multiline_text(
-        (270, 210),
-        "Offline archery score tracking for groups\non the range. One phone hosts, everyone\njoins and logs scores in real time.",
+        (290, 176),
+        "Score with your group at the range\nor challenge friends from anywhere.",
         font=sub_font,
-        fill=MUTED,
-        spacing=4,
+        fill=SAND,
+        spacing=6,
     )
 
-    draw.text((40, 340), "How it works", font=section_font, fill=TEXT)
-    draw_gold_accent(draw, 40, 388, 180)
+    draw.text((40, 316), "How it works", font=section_font, fill=TEXT)
+    draw_gold_accent(draw, 40, 364, 180)
 
     steps = [
-        (
-            "1",
-            "Host a match",
-            "Create a session on the field. Set how many\ntargets you'll shoot before scoring begins.",
-        ),
-        (
-            "2",
-            "Join via QR or nearby",
-            "Other archers scan a QR code or pick the\nhost from nearby devices — no accounts.",
-        ),
-        (
-            "3",
-            "Log every arrow",
-            "Large 0–10 number pad built for outdoor\nlight. Submit scores turn by turn.",
-        ),
-        (
-            "4",
-            "See the leaderboard",
-            "Totals update live as the host merges\nscores. Everyone stays in sync.",
-        ),
+        ("1", "Start a match", "Host at the range, or tap a friend\nto send them a remote challenge."),
+        ("2", "Join in one tap", "Scan the QR, pick a nearby host,\nor tap Join on a challenge."),
+        ("3", "Score & compare", "Big outdoor number pad, live totals,\nand friends & global leaderboards."),
     ]
 
-    y = 420
-    card_h = 188
-    gap = 22
+    y = 396
+    card_h = 168
+    gap = 20
     for number, title, body in steps:
         draw_step_card(img, (40, y, w - 40, y + card_h), number, title, body)
         y += card_h + gap
 
-    # Highlights
-    draw.text((40, y + 18), "Built for the field", font=section_font, fill=TEXT)
-    draw_gold_accent(draw, 40, y + 66, 200)
-    y += 88
-
     highlights = [
-        ("No server", "Scores stay on your phones.\nNothing uploaded to the cloud."),
-        ("Works offline", "Peer-to-peer sync over\nBluetooth and Wi‑Fi Direct."),
-        ("Group friendly", "Host sets the round, every\narcher logs their own scores."),
+        ("Works offline", "Nearby play over\nBluetooth & Wi‑Fi.\nNo signal needed."),
+        ("Friends & feed", "Add archers, share\nposts, and find\nshoots near you."),
+        ("Free to score", "Plus unlocks remote\nhosting. Friends\nalways join free."),
     ]
 
+    y += 10
     col_w = (w - 100) // 3
     for i, (title, body) in enumerate(highlights):
         x0 = 40 + i * (col_w + 10)
-        box = (x0, y, x0 + col_w, y + 190)
+        box = (x0, y, x0 + col_w, y + 176)
         draw_rounded_rect(draw, box, 20, CARD, outline=MOSS, width=2)
-        draw.text((x0 + 20, y + 20), title, font=load_font(FONT_BOLD, 24), fill=GOLD)
-        draw.multiline_text((x0 + 20, y + 62), body, font=load_font(FONT_REG, 20), fill=MUTED, spacing=5)
+        draw.text((x0 + 20, y + 20), title, font=load_font(FONT_BOLD, 26), fill=GOLD)
+        draw.multiline_text((x0 + 20, y + 62), body, font=load_font(FONT_REG, 21), fill=MUTED, spacing=5)
 
+    footer = "Get Archerypal on Google Play"
     draw.rounded_rectangle((40, h - 96, w - 40, h - 40), radius=20, fill=MOSS)
-    draw.text(
-        (72, h - 78),
-        "Archerypal  —  Pure Kotlin Android  —  Google Play",
-        font=footer_font,
-        fill=TEXT,
-    )
+    fw = draw.textlength(footer, font=footer_font)
+    draw.text(((w - fw) / 2, h - 82), footer, font=footer_font, fill=TEXT)
 
     return img
 
 
 def main() -> None:
+    import sys
+
     icon = Image.open(ICON_PATH).convert("RGBA")
-    feature = create_feature_graphic(icon)
-    feature.save(OUT_FEATURE, "PNG", optimize=True)
-    print(f"Wrote {OUT_FEATURE} ({feature.size[0]}x{feature.size[1]})")
+    if "--infographic-only" not in sys.argv:
+        feature = create_feature_graphic(icon)
+        feature.save(OUT_FEATURE, "PNG", optimize=True)
+        print(f"Wrote {OUT_FEATURE} ({feature.size[0]}x{feature.size[1]})")
 
     infographic = create_infographic(icon)
     infographic.save(OUT_INFOGRAPHIC, "PNG", optimize=True)
